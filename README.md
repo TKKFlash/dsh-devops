@@ -480,4 +480,4 @@ Highlights:
 - **Safe by default**: runtime installation is off unless explicitly enabled (`allowInstall`), the API only accepts loopback traffic unless `allowLanAccess` is set, and custom node code requires `allowCustomNodeCode`.
 - **AI integration**: one skill (`devops-pipeline-authoring`) and ten agent tools (`devops_list_pipelines`, `devops_create_pipeline`, `devops_update_pipeline`, `devops_validate_pipeline`, `devops_run`, `devops_status`, `devops_logs`, `devops_cancel`, `devops_servers`, `devops_provision`).
 - **Install**: `dsh plugin --profile web add dsh-devops`, or install from the Web UI plugin market. Then open the **DevOps** entry in the sidebar.
-- **Tests**: `node --test test/*.test.mjs` — built-in runner, no network, no external dependencies.
+- **Docs**: usage is this README; troubleshooting, known issues, the interface contract and contributing guides live under [`docs/`](docs/) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
