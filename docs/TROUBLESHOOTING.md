@@ -1,9 +1,5 @@
 # 故障排查
 
-本文承接原本堆在 README 里的故障排查与常见问题。README 只讲「怎么用」；
-排障、运行边界与版本记录属于维护信息，落在这里、[KNOWN-ISSUES](./KNOWN-ISSUES.md) 与
-[CHANGELOG](../CHANGELOG.md)。
-
 ## 步骤卡住不动
 
 看运行详情页的 **phase 流转**：

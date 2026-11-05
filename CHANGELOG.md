@@ -51,7 +51,7 @@
 - `CONTRIBUTING.md`（新增）：**开发与测试**节与**目录结构**从 README 迁出，并补充测试约定
   （真实实现优先于假桩、修 bug 用例要能抓住该 bug、测试进程必须能自然退出）。
 - `docs/KNOWN-ISSUES.md`：运行边界与已知问题从 README 迁出。
-- README 的目录同步更新，维护性内容统一收敛到「进一步的文档」指引表。
+- README 的目录同步更新；正文不写任何关于文档分工的说明性文字，只在末尾留一组文档链接。
 
 - `scripts/build-client.mjs` 模块顺序登记 `syntax.js`。
 - 字段类型白名单（`nodes/index.js`、`model/schema.js`、`test/nodes.test.mjs` 三处）同步加入 `ref:pipeline`。

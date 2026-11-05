@@ -449,17 +449,13 @@ event: ping      data: {}                                     // 每 15s
 
 ---
 
-## 进一步的文档
+## 相关文档
 
-本 README 只讲**怎么用**。维护性内容一律不放这里：
-
-| 想看什么 | 去哪 |
-|---|---|
-| 排障、常见问题与错误码 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
-| 运行边界与已知问题 | [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md) |
-| 版本变更与修复记录 | [`CHANGELOG.md`](CHANGELOG.md) |
-| 内部接口契约（唯一权威） | [`docs/CONTRACT.md`](docs/CONTRACT.md) |
-| 参与开发、构建与测试 | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+- [故障排查与常见问题](docs/TROUBLESHOOTING.md)
+- [已知限制](docs/KNOWN-ISSUES.md)
+- [更新日志](CHANGELOG.md)
+- [接口契约](docs/CONTRACT.md)
+- [参与开发](CONTRIBUTING.md)
 
 ---
 
