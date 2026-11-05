@@ -36,7 +36,9 @@
     "@deepseek-ai/cordis": "^4.0.1"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/cordis": { "optional": true }
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
   },
   "dependencies": {},
   "optionalDependencies": {
@@ -62,12 +64,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/CHANGE-ME/dsh-devops.git"
+    "url": "git+https://github.com/TKKFlash/dsh-devops.git"
   },
   "bugs": {
-    "url": "https://github.com/CHANGE-ME/dsh-devops/issues"
+    "url": "https://github.com/TKKFlash/dsh-devops/issues"
   },
-  "homepage": "https://github.com/CHANGE-ME/dsh-devops#readme",
+  "homepage": "https://github.com/TKKFlash/dsh-devops#readme",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

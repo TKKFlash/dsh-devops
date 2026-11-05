@@ -69,5 +69,5 @@
 - 纯 ESM、零构建、除可选 `ssh2` 外零运行时依赖（glob 与文件锁为自研零依赖实现）。
 - 测试：`node --test`，覆盖模型校验、变量合并、glob、模板、存储原子性、日志偏移与打码、DAG、本地执行器、供给策略、节点注册表、导出导入、HTTP 与 SSE。
 
-[Unreleased]: https://github.com/CHANGE-ME/dsh-devops/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/CHANGE-ME/dsh-devops/releases/tag/v0.1.0
+[Unreleased]: https://github.com/TKKFlash/dsh-devops/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/TKKFlash/dsh-devops/releases/tag/v0.1.0
