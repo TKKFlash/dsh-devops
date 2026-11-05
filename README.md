@@ -30,7 +30,7 @@
 
 | 能力 | 说明 |
 |---|---|
-| 可视化编排 | 三栏编辑器：左侧节点面板 + 结构树，中间阶段泳道画布（拖拽排序、跨泳道移动、并行开关、`needs` 依赖边用 SVG 贝塞尔绘制），右侧按节点字段描述符渲染检查器表单 |
+| 可视化编排 | 三栏编辑器：左侧节点面板 + 结构树，中间**横向编排画布**（阶段成列、节点为块状卡片；拖拽排序与跨列移动、列间可就地插入并行阶段、`needs` 依赖边用 SVG 贝塞尔按列布局绘制、零依赖 CSS 动效并尊重 reduced-motion），右侧按节点字段描述符渲染检查器表单 |
 | 两种调度模式 | **staged**（阶段串行 + 阶段内并行）与 **DAG**（跨阶段 `needs` 依赖），两者不得混用 |
 | 本地 + SSH 执行 | 本机直接 `spawn`；远端经 SSH，命令一律以 **argv 数组**传递，用户输入绝不进入 shell 解释 |
 | 环境探测与供给 | 探测远端 OS/架构/Shell/运行时/包管理器/sudo；缺失运行时按 `uv → pyenv → 发行版包` 顺序供给，**默认不擅自安装** |
@@ -541,36 +541,10 @@ dsh-devops/
 
 ## 已知限制
 
-如实记录当前边界，避免误期待：
+本 README 只讲「怎么用」；运行边界、已知问题与修复历史不再堆在这里：
 
-| 项 | 说明 |
-|---|---|
-| SSH 远端 pid | SSH 通道拿不到可靠的远端 pid（命令由登录 shell 承载），取消是「尽力终止」；步骤结果里如实标注 `pidKnown: false`。本地执行器用进程树终止（Windows `taskkill /t`），取消是确定的。 |
-| `when: manual` 与 `wait.approval` | 需要人工确认，会一直等待，属预期行为而非卡住；配了 `timeoutMs` 才会超时。 |
-| 高危安装方案 | `curl \| sh` 安装 uv / NodeSource 默认**关闭**，需显式开启 `allowRemoteInstallerScripts`，且方案会带 `highRisk` 标记。 |
-| 自定义节点 | 需 `allowCustomNodeCode` 显式开启；未开启时 `registry.loadCustom` 不加载。 |
-| 内置本机服务器 | `port` 为 `0`（本机不经 TCP），schema 对 `kind: "local"` 允许 0 或省略；`kind: "ssh"` 才要求 1–65535。 |
-| 日志内存环 | `logRingBytes` 之外的旧日志只留在磁盘；SSE 落后于环时先发 `gap` 事件再继续，界面据此提示「日志有跳跃」。 |
-| 导出物 | 只含凭据**引用名**，不含明文；导入后需要在目标环境重新配置对应凭据。 |
-| 单实例数据目录 | `<dataDir>` 用 `mkdir` 独占目录做跨进程锁；同一目录被多个宿主进程同时写入不在支持范围内。 |
-
-### 已修复（0.1.0 期间发现并回归覆盖）
-
-以下问题在开发期被发现并修复，测试套件中保留了对应的回归用例：
-
-| 问题 | 修复 | 回归用例 |
-|---|---|---|
-| 命令输出每行被写两遍（stdout 重复落盘） | 修正输出管道 | `test/engine-run.test.mjs` › 回归：命令输出每行只写一次 |
-| `log.message` 的中文落盘变成 `??` | 修正编码处理 | `test/engine-run.test.mjs` › 回归：中文输出落盘不乱码 |
-| 内置 `local` 服务器（`port: 0`）无法通过 `validateServer` | schema 按 `kind` 分档校验端口 | `test/schema.test.mjs` › store 预置的 local 服务器必须能通过 |
-| `report[].overridden` 返回计数而非布尔 | 改为布尔 | `test/variables.test.mjs` › report 记录来源 |
-| `engine.start` 未校验非法流水线 | 补校验并抛 `流水线不可执行：…` | `test/engine-run.test.mjs` › 非法流水线 |
-| `readySet` 忽略 `when`（`always` 不执行、`manual` 被自动执行） | 接入 `whenDecision` | `test/dag.test.mjs` › when=always / when=manual |
-| `engine.start` 把「依赖成环」误报成「没有任何 job」 | 用 `jobs` 数量判断空图 | `test/dag.test.mjs` › detectCycle 成环 |
-| `retryStep` 先重置再判断导致静默不生效 | 调整顺序并真正重跑下游 | `test/engine-run.test.mjs` |
-| 标准 `SHA256:` 指纹格式无法通过校验 | 兼容指纹与公钥两种输入 | `test/ssh.test.mjs` › 标准的 SHA256: 指纹格式必须能被校验 |
-| `glob` 的 `!` 取反在 `model/glob` 与 `ssh/glob` 之间语义相反 | 统一为「命中被排除项返回 false」 | `test/glob.test.mjs` › 取反语义跨模块一致 |
-| `runtime` 的 PATH 注入混用平台分隔符、且混入宿主 PATH | 按目标平台选分隔符、以已合并层为基准 | `test/variables.test.mjs` › runtime 注入 |
+- 当前边界与已知问题 → [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
+- 版本变更与修复记录 → [`CHANGELOG.md`](CHANGELOG.md)
 
 ---
 
@@ -582,7 +556,7 @@ dsh-devops/
 
 ## English Summary
 
-**dsh-devops** is an AI-native DevOps pipeline workbench plugin for DeepSeek Harness. It provides visual pipeline authoring (stage lanes, drag-and-drop, DAG dependency edges), local and SSH remote execution, runtime probing and provisioning, real-time logs over SSE with resume support, templates and a resource library, and versioned export/import.
+**dsh-devops** is an AI-native DevOps pipeline workbench plugin for DeepSeek Harness. It provides visual pipeline authoring (horizontal stage columns with block cards, drag-and-drop, DAG dependency edges), local and SSH remote execution, runtime probing and provisioning, real-time logs over SSE with resume support, templates and a resource library, and versioned export/import.
 
 Highlights:
 
