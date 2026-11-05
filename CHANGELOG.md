@@ -44,7 +44,15 @@
 
 ### 变更
 
-- `docs/KNOWN-ISSUES.md`：运行边界与已知问题从 README 迁出，README 只保留使用说明。
+**文档归位：README 只讲「怎么用」**
+- `docs/TROUBLESHOOTING.md`（新增）：**故障排查**整节从 README 迁出——步骤卡住不动（phase 流转）、
+  连接失败归因表、常见问题表；并补充「测试连接」按错误码的排查顺序、删阶段遗留 `needs`、
+  改源码后没生效（需重建 `client.js` / 重启宿主）等新条目。
+- `CONTRIBUTING.md`（新增）：**开发与测试**节与**目录结构**从 README 迁出，并补充测试约定
+  （真实实现优先于假桩、修 bug 用例要能抓住该 bug、测试进程必须能自然退出）。
+- `docs/KNOWN-ISSUES.md`：运行边界与已知问题从 README 迁出。
+- README 的目录同步更新，维护性内容统一收敛到「进一步的文档」指引表。
+
 - `scripts/build-client.mjs` 模块顺序登记 `syntax.js`。
 - 字段类型白名单（`nodes/index.js`、`model/schema.js`、`test/nodes.test.mjs` 三处）同步加入 `ref:pipeline`。
 

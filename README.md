@@ -19,8 +19,7 @@
 - [配置项](#配置项)
 - [HTTP API](#http-api)
 - [安全说明](#安全说明)
-- [故障排查](#故障排查)
-- [开发与测试](#开发与测试)
+- [进一步的文档](#进一步的文档)
 - [License](#license)
 - [English Summary](#english-summary)
 
@@ -450,101 +449,17 @@ event: ping      data: {}                                     // 每 15s
 
 ---
 
-## 故障排查
+## 进一步的文档
 
-### 步骤卡住不动
+本 README 只讲**怎么用**。维护性内容一律不放这里：
 
-看运行详情页的 **phase 流转**：
-
-| phase | 含义 |
+| 想看什么 | 去哪 |
 |---|---|
-| `queued` | 排队等待 |
-| `connecting` | 正在建立连接（SSH 握手/认证） |
-| `provisioning` | 正在准备运行时/安装依赖 |
-| `transferring` | 正在传输文件 |
-| `running` | 命令执行中 |
-| `draining` | 命令已结束，正在收尾读取剩余输出 |
-| `settled` | 已结束 |
-
-- **卡在 `connecting`**：多为 DNS/网络/安全组问题。归因线索见下表。
-- **卡在 `provisioning`**：正在跑安装命令，首次安装耗时较长（超时上限 10 分钟）。
-- **`running` 且显示「已 Xm Ys 无输出」**：命令确实静默（如 `npm ci` 的某些阶段）或进程挂死。接近 `timeoutMs` 时界面显示倒计时；到点会先 `SIGTERM`，短暂宽限后 `SIGKILL`。
-- **等待人工确认**：`when: manual` 或 `wait.approval` 节点会一直等待，属预期行为。
-
-### 连接失败归因
-
-| 现象 | 原因 | 处理 |
-|---|---|---|
-| `dns` | 主机名无法解析 | 检查主机名拼写、DNS/VPN |
-| `refused` | 端口拒绝连接 | 确认 `sshd` 已启动、端口正确 |
-| `unreachable` | 网络不可达 | 检查 VPN/防火墙/网段 |
-| `timeout` | 连接超时 | 检查安全组、端口是否被拦截 |
-| `auth` | 认证失败 | 检查用户名、私钥内容与权限、密码或 ssh-agent |
-| `fingerprint` | 主机密钥校验失败 | 指纹与预期不一致（可能主机重装或中间人）；确认后用 `ssh-keyscan` 更新 |
-| `crypto` | 算法协商失败 | 客户端与服务端无共同算法，检查 sshd 版本/配置 |
-
-### 常见问题
-
-| 现象 | 原因与处理 |
-|---|---|
-| 报「未安装可选依赖 ssh2」 | 执行 `npm i ssh2`，或把该步骤服务器改成「本机（local）」 |
-| 报 `mixed-scheduling` | 同时用了 `needs` 与 `parallel: true` 阶段；统一成一种调度模式 |
-| 报 `unknown-node` | 节点类型不存在（可能是自定义节点未开启或未加载） |
-| 报 `cycle` | `needs` 依赖成环，按错误里的 `path` 解开 |
-| 报 `missing-field` / `bad-type` / `bad-id` | 按 `errors[].path`（点路径，如 `stages[0].jobs[1].node`）定位修正 |
-| 运行时缺失但没自动安装 | 这是**默认行为**（`allowInstall: false`）。按返回的 `suggestion` 手动执行，或在服务器上开启 `allowProvision` 并在步骤里打开 `allowInstall` |
-| 视口中文乱码 | 已是增量 UTF-8 解码；若仍异常请附上该步骤的日志片段 |
-| 端口/环境变量不生效 | 检查变量优先级，注意空串/`null` 表示**删除该键** |
-| 页面打不开插件 | 确认 `cordis.patch.yml` 的 `name` 与实际包名一致；`dsh plugin list` 查看是否已挂载 |
-
----
-
-## 开发与测试
-
-```bash
-# 前端拼接（读 src/client/*.js → 输出根目录 client.js）
-node scripts/build-client.mjs
-
-# 语法检查
-node --check client.js
-
-# 测试（Node 内置 test runner，零外部依赖、零网络）
-node --test test/*.test.mjs
-# 或
-npm test
-```
-
-测试覆盖：schema 校验与错误码/path、变量十层合并与密钥打码、glob（`**`/`*`/`?`/`{a,b}`/`!`）、模板插值与实例化、Store 文件后端（原子写、并发、重启持久化）、日志存储（JSONL、环溢出、打码、按天清理）、DAG（拓扑序、环检测、`when`/`allowFailure` 传播）、本地执行器（退出码、超时、取消真的终止进程、env 透传与删除）、SSH（**注入 mock transport，不联网**：转义、分帧、取消、路径越界、指纹）、provision（多发行版探测解析、方案优先级、默认不安装）、节点注册表（18 个节点、字段类型白名单、`condition.if` 注入防护）、导出导入（往返一致、密钥不外泄、冲突与原子性）、HTTP/SSE（状态码、body 超限、非 loopback 拒绝、续传与 gap）。
-
-### 目录结构
-
-```
-dsh-devops/
-  index.js                  装配入口（store→log→nodes→executors→engine→router→tools→skills）
-  client.js                 打包后的前端单文件（由 scripts/build-client.mjs 生成）
-  src/
-    config.js               配置解析与默认值
-    model/                  schema 校验、变量合并、模板、glob
-    store/                  文件后端存储（原子写 + mkdir 锁）
-    logs/                   JSONL 日志存储 + 内存环
-    engine/                 DAG、运行引擎、执行器（local/ssh）、节点、供给
-    api/                    HTTP 路由、SSE、各域 handler
-    client/                 前端源码（按页面拆分）
-  test/                     测试套件
-  skills/                   技能
-  docs/CONTRACT.md          内部接口契约（唯一权威）
-```
-
-接口以 `docs/CONTRACT.md` 为唯一权威；任何签名变更必须先更新该文件。
-
----
-
-## 已知限制
-
-本 README 只讲「怎么用」；运行边界、已知问题与修复历史不再堆在这里：
-
-- 当前边界与已知问题 → [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
-- 版本变更与修复记录 → [`CHANGELOG.md`](CHANGELOG.md)
+| 排障、常见问题与错误码 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
+| 运行边界与已知问题 | [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md) |
+| 版本变更与修复记录 | [`CHANGELOG.md`](CHANGELOG.md) |
+| 内部接口契约（唯一权威） | [`docs/CONTRACT.md`](docs/CONTRACT.md) |
+| 参与开发、构建与测试 | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 
 ---
 
