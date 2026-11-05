@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="DevOps Pipelines">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#22a06b"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#g)"/>
+  <!-- pipeline: two branches merging into one -->
+  <g fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 20h11"/>
+    <path d="M14 44h11"/>
+    <path d="M39 32h11"/>
+    <path d="M25 20c6 0 6 12 14 12"/>
+    <path d="M25 44c6 0 6-12 14-12"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="30" cy="20" r="4.4"/>
+    <circle cx="30" cy="44" r="4.4"/>
+    <circle cx="50" cy="32" r="4.8"/>
+    <circle cx="11" cy="20" r="3.2"/>
+    <circle cx="11" cy="44" r="3.2"/>
+  </g>
+</svg>

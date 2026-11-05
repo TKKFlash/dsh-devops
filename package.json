@@ -1,0 +1,80 @@
+{
+  "name": "dsh-devops",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 的 AI 原生 DevOps 流水线工作台：可视化编排流水线、本地与 SSH 远端执行、环境探测与安装、实时日志、模板与资源库、导出导入。 · AI-native DevOps pipeline workbench for DeepSeek Harness.",
+  "type": "module",
+  "main": "index.js",
+  "icon": "icon.svg",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./skills/*": "./skills/*"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "skills",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.13.0",
+    "dsh": ">=0.2.1-rc.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true }
+  },
+  "dependencies": {},
+  "optionalDependencies": {
+    "ssh2": "^1.16.0"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "devops",
+    "ci",
+    "cd",
+    "pipeline",
+    "workflow",
+    "ssh",
+    "automation",
+    "ai"
+  ],
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "test": "node --test test/*.test.mjs",
+    "prepublishOnly": "node scripts/build-client.mjs && node --test test/*.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CHANGE-ME/dsh-devops.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CHANGE-ME/dsh-devops/issues"
+  },
+  "homepage": "https://github.com/CHANGE-ME/dsh-devops#readme",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": false
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DevOps Pipelines",
+    "description": "AI-native pipelines: visual DAG editor, local and SSH remote execution, environment provisioning, live logs, templates and a reusable resource library."
+  }
+}

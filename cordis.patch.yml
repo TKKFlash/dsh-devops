@@ -1,0 +1,23 @@
+# ============================================================================
+# dsh-devops — bundle patch
+# ============================================================================
+# 挂载声明：DSH 启动时按 bundle 层栈叠加各插件 patch，本文件把 dsh-devops
+# 插入 Web profile 的配置树。
+#
+# 安装：
+#   dsh plugin --profile web add dsh-devops          # 从 npm / 市场
+#   dsh plugin --profile web add link:<本目录绝对路径>  # 本地开发
+# 或在 Web 界面：插件 → 添加插件 → dsh-devops
+#
+# 注意：
+#   * name 必须是实际包名（cordis 按 name import 包）；写错会导致新装用户
+#     报 "Cannot find package"。
+#   * 纯 insert(id/name) 可热挂载，无需重启宿主。
+#   * 不要在此硬编码任何机器专属路径，否则别人安装后插件起不来。
+#   * 本插件所需的宿主服务（webServer / storageDomain / credentials /
+#     skills / commands / tools）由 profile 自带，无需在此声明。
+# ============================================================================
+- insert:
+    - id: dsh-devops
+      name: dsh-devops
+      config: {}

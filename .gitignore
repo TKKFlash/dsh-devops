@@ -1,0 +1,10 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+*.tmp
+.tmp/
+coverage/
+# 开发期的临时验证脚本（__xxx.mjs），不入库
+__*.mjs
+# 注意：client.js 与 src/ 都入库（零构建，装包即用）
