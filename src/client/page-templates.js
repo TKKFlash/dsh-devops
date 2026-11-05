@@ -9,6 +9,46 @@ const { Button, TextInput, Select, Card, Empty, Chip, Field, Modal, KV, Banner, 
 const { FieldControl } = require('./fields.js');
 const { api } = require('./api.js');
 
+/* ------------------------------------------------------------------ *
+ * 视图记忆（模板页筛选）：与 page-pipelines.js / app.js 同一套约定，
+ * 读写 sessionStorage 的 'dsh-devops.view'，只存标量筛选条件。
+ * ------------------------------------------------------------------ */
+const VIEW_KEY = 'dsh-devops.view';
+
+/** 安全读取视图记忆（无 storage / JSON 损坏时降级为 null）。 */
+function readViewState() {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(VIEW_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 安全写入视图记忆（合并既有值；存不了不影响功能）。 */
+function writeViewState(patch) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    const current = readViewState() || {};
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify(Object.assign({}, current, patch)));
+  } catch {
+    /* 忽略：存不了不影响功能 */
+  }
+}
+
+/** 解析模板页筛选状态（只认标量，非法值降级为空/关闭）。 */
+function resolveTemplateFilters(remembered) {
+  const view = remembered && typeof remembered === 'object' ? remembered : null;
+  return {
+    keyword: view && typeof view.templatesKeyword === 'string' ? view.templatesKeyword : '',
+    category: view && typeof view.templatesCategory === 'string' ? view.templatesCategory : '',
+    favOnly: !!(view && view.templatesFavOnly === true),
+  };
+}
+
 /** 从模板参数生成一份表单初值。 */
 function initialParams(template) {
   const out = {};
@@ -65,7 +105,7 @@ function TemplateParamsForm(props) {
             }),
             value: props.params[param.name],
             onChange: (v) => props.onChange(Object.assign({}, props.params, { [param.name]: v })),
-            ctx: props.ctx,
+            ctx: props.fieldCtx || props.ctx,
             serverId: props.state.settings && props.state.settings.defaultServer,
             serverFor: (id) => (props.state.servers || []).find((s) => s.id === id),
             recent: props.recent,
@@ -150,6 +190,7 @@ function InstantiateModal(props) {
             params,
             onChange: setParams,
             ctx: props.ctx,
+            fieldCtx: props.fieldCtx,
             state: props.state,
             recent: props.recent,
             remember: props.remember,
@@ -183,9 +224,30 @@ function InstantiateModal(props) {
 /** 模板列表。 */
 function Templates(props) {
   const templates = props.state.templates || [];
-  const [keyword, setKeyword] = useState('');
-  const [category, setCategory] = useState('');
-  const [favOnly, setFavOnly] = useState(false);
+  // 筛选条件属于「视图位置」：离开再回来时保留搜索词、分类与收藏过滤。
+  const saved = resolveTemplateFilters(props.remembered !== undefined ? props.remembered : readViewState());
+  const [keyword, setKeyword] = useState(saved.keyword);
+  const [category, setCategory] = useState(saved.category);
+  const [favOnly, setFavOnly] = useState(saved.favOnly);
+
+  /**
+   * 筛选变化即写入记忆（只存标量）。
+   *
+   * 只写「本次变化的那一项」：writeViewState 自己会与已存值合并。
+   * 不能拿 saved 当基线合并 —— saved 派生自 props.remembered，
+   * 那是 App 挂载时的快照、不会随我们的写入更新，
+   * 否则「先输关键字、再切分类」会把关键字覆盖回空值。
+   */
+  function patchFilter(patch) {
+    const next = {};
+    if (patch.keyword !== undefined) next.templatesKeyword = patch.keyword || '';
+    if (patch.category !== undefined) next.templatesCategory = patch.category || '';
+    if (patch.favOnly !== undefined) next.templatesFavOnly = !!patch.favOnly;
+    writeViewState(next);
+    if (patch.keyword !== undefined) setKeyword(patch.keyword);
+    if (patch.category !== undefined) setCategory(patch.category);
+    if (patch.favOnly !== undefined) setFavOnly(patch.favOnly);
+  }
   const [target, setTarget] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -233,9 +295,9 @@ function Templates(props) {
     h(
       'div',
       { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px' } },
-      h('div', { style: { width: '220px' } }, h(TextInput, { value: keyword, placeholder: '搜索模板', onChange: setKeyword })),
-      h('div', { style: { width: '150px' } }, h(Select, { value: category, placeholder: '全部分类', options: categories, onChange: setCategory })),
-      h(Button, { size: 'sm', icon: 'sparkle', label: '只看收藏', active: favOnly, onClick: () => setFavOnly(!favOnly) }),
+      h('div', { style: { width: '220px' } }, h(TextInput, { value: keyword, placeholder: '搜索模板', onChange: (v) => patchFilter({ keyword: v }) })),
+      h('div', { style: { width: '150px' } }, h(Select, { value: category, placeholder: '全部分类', options: categories, onChange: (v) => patchFilter({ category: v }) })),
+      h(Button, { size: 'sm', icon: 'sparkle', label: '只看收藏', active: favOnly, onClick: () => patchFilter({ favOnly: !favOnly }) }),
       h('div', { className: 'dsh-devops-spacer' }),
       h(Button, { size: 'sm', icon: 'refresh', label: '刷新', busy, onClick: props.onReload }),
     ),
@@ -278,6 +340,7 @@ function Templates(props) {
     target ? h(InstantiateModal, {
       template: target,
       ctx: props.ctx,
+      fieldCtx: props.fieldCtx,
       state: props.state,
       toast: props.toast,
       recent: props.recent,
@@ -291,6 +354,9 @@ function Templates(props) {
   );
 }
 
+exports.resolveTemplateFilters = resolveTemplateFilters;
+exports.readViewState = readViewState;
+exports.writeViewState = writeViewState;
 exports.Templates = Templates;
 exports.InstantiateModal = InstantiateModal;
 exports.previewInterpolate = previewInterpolate;

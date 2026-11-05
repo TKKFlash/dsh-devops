@@ -6,11 +6,13 @@
  *  string 单行 | text 多行 | code 代码 | path.dir 目录 | path.file 文件
  *  glob glob+命中预览 | enum 下拉 | boolean 开关 | number 数字
  *  server 服务器 | runtime 运行时 | keyvalue 键值表 | multiselect 标签多选
- *  ref:envset 环境变量组引用 | ref:snippet 脚本片段引用
+ *  ref:envset 环境变量组引用 | ref:snippet 脚本片段引用 | ref:pipeline 流水线引用（可搜索）
  */
 const { h, useState, useEffect, useRef, useMemo, ellipsis, fmtBytes } = require('./h.js');
 const { Icon, Button, Switch, TextInput, TextArea, Select, Field, Chip, Empty } = require('./ui.js');
 const { api } = require('./api.js');
+// 共享语法着色引擎（零依赖纯函数）：token 只产出语义 kind，颜色由 CSS 决定。
+const { normalizeLanguage, tokenizeLines } = require('./syntax.js');
 
 /** 一个可被鼠标点击的锚点容器，用于放浏览/预览下拉。 */
 function Anchor(props) {
@@ -22,97 +24,198 @@ function Anchor(props) {
 }
 
 /* ------------------------------------------------------------------ *
- * code：行号 + 极简着色
+ * code：深色终端观感的代码编辑器（着色层 + 透明 textarea 叠加）
  * ------------------------------------------------------------------ */
 
-const KEYWORDS = {
-  shell: /\b(if|then|else|elif|fi|for|while|do|done|case|esac|function|export|local|return|set|cd|echo|exit)\b/g,
-  javascript: /\b(const|let|var|function|return|if|else|for|while|await|async|import|export|class|new|try|catch|throw)\b/g,
-  python: /\b(def|class|import|from|return|if|elif|else|for|while|try|except|with|as|lambda|None|True|False|await|async)\b/g,
-};
+/** 把一行 token 渲染成语法着色的 span（颜色全部由 CSS 的 .dsh-devops-tok-* 决定）。 */
+function tokenSpans(tokens, keyPrefix) {
+  return tokens.map((token, i) =>
+    h('span', { key: keyPrefix + '-' + i, className: 'dsh-devops-tok dsh-devops-tok-' + token.kind }, token.text),
+  );
+}
 
-/** 极简语法着色：只处理注释、字符串、关键字三类，绝不注入 HTML。 */
-function highlight(line, language) {
-  const parts = [];
-  let rest = line;
-  const comment = language === 'shell' || language === 'python' ? /(^|\s)(#.*)$/ : /(\/\/.*)$/;
-  const cm = rest.match(comment);
-  if (cm) {
-    const idx = rest.length - cm[2].length;
-    rest = rest.slice(0, idx);
-    parts.push([cm[2], 'comment']);
-  }
-  const tokens = [];
-  const re = /("[^"]*"|'[^']*')/;
-  let m = rest.match(re);
-  while (m) {
-    const before = rest.slice(0, m.index);
-    tokens.push([before, null]);
-    tokens.push([m[1], 'string']);
-    rest = rest.slice(m.index + m[1].length);
-    m = rest.match(re);
-  }
-  tokens.push([rest, null]);
-  if (parts.length) tokens.push(parts[0]);
+/**
+ * 代码编辑器。
+ *
+ * 实现要点：一个**可编辑的透明 textarea** 叠在**着色高亮层**之上，两层用完全相同的
+ * 字体、行高、内边距与换行规则，因此光标与选区与看到的着色文本严丝合缝。
+ * 这样既得到语法着色（textarea 本身无法着色），又不牺牲编辑体验。
+ *
+ * 尺寸：内联时**随内容自动增高**（上限 30 行后内部滚动），并额外提供
+ * 「放大编辑」——全屏浮层里写长脚本，这是用户抱怨「写了很多就看不清」的正解。
+ *
+ * props: { field, value, onChange }
+ */
 
-  return tokens.map(([text, kind], i) => {
-    if (!text) return null;
-    if (kind) {
-      return h('span', { key: i, style: { color: kind === 'string' ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-label-caption)' } }, text);
+/** 语言显示名（工具栏标签用）。 */
+const CODE_LANG_LABEL = { shell: 'Shell', python: 'Python', javascript: 'JavaScript', json: 'JSON', yaml: 'YAML' };
+
+/**
+ * 代码编辑面：行号 + 着色层 + 透明输入层。
+ * props: { value, language, onChange, placeholder, minRows, maxRows, fill }
+ *   fill=true 时撑满父容器（全屏浮层用），否则按内容自动增高。
+ */
+function CodeSurface(props) {
+  const value = props.value === undefined || props.value === null ? '' : String(props.value);
+  const lang = props.language || 'shell';
+  const lines = useMemo(() => tokenizeLines(value, lang), [value, lang]);
+  const minRows = props.minRows || 8;
+  const maxRows = props.maxRows || 30;
+  const rows = props.fill ? 20 : Math.min(Math.max(lines.length + 1, minRows), maxRows);
+  const lineCount = props.fill ? Math.max(lines.length, minRows) : rows;
+  const hlRef = useRef(null);
+
+  /** 高亮层跟随输入层滚动（长脚本滚动时必须严丝合缝）。 */
+  function syncScroll(event) {
+    const pre = hlRef.current;
+    if (pre && pre.scrollTop !== undefined) {
+      pre.scrollTop = event.target.scrollTop;
+      pre.scrollLeft = event.target.scrollLeft;
     }
-    const kw = KEYWORDS[language];
-    if (!kw) return h('span', { key: i }, text);
-    const pieces = text.split(kw);
-    return h(
-      'span',
-      { key: i },
-      pieces.map((piece, j) =>
-        j % 2 === 1
-          ? h('span', { key: j, style: { color: 'var(--dsw-alias-state-business-primary)' } }, piece)
-          : h('span', { key: j }, piece),
+  }
+
+  return h(
+    'div',
+    {
+      className: 'dsh-devops-code',
+      'data-language': lang,
+      'data-fill': props.fill ? 'true' : undefined,
+      'data-rows': String(rows),
+    },
+    h(
+      'div',
+      { className: 'dsh-devops-code-gutter', 'aria-hidden': 'true' },
+      Array.from({ length: lineCount }, (_, i) => h('span', { key: i, className: 'dsh-devops-code-lineno' }, String(i + 1))),
+    ),
+    h(
+      'div',
+      { className: 'dsh-devops-code-shell' },
+      h(
+        'pre',
+        { className: 'dsh-devops-code-hl', 'aria-hidden': 'true', ref: hlRef },
+        lines.map((tokens, i) =>
+          h('span', { key: i, className: 'dsh-devops-code-hline' }, tokenSpans(tokens, 'l' + i).concat([h('br', { key: 'br' })])),
+        ),
       ),
-    );
-  });
+      h('textarea', {
+        className: 'dsh-devops-code-area',
+        value,
+        spellCheck: false,
+        wrap: 'off',
+        'data-language': lang,
+        placeholder: props.placeholder || '',
+        rows,
+        onChange: (e) => props.onChange(e.target.value),
+        onScroll: syncScroll,
+        onKeyDown: (e) => {
+          const el = e.target;
+          // Tab 插入两个空格（Shift+Tab 暂不反缩进，保持行为可预期）
+          if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = el.selectionStart;
+            const end = el.selectionEnd;
+            const next = value.slice(0, start) + '  ' + value.slice(end);
+            props.onChange(next);
+            requestAnimationFrame(() => {
+              el.selectionStart = el.selectionEnd = start + 2;
+            });
+          }
+        },
+      }),
+    ),
+  );
 }
 
 function CodeControl(props) {
   const field = props.field;
   const value = props.value === undefined || props.value === null ? '' : String(props.value);
-  const language = field.language || 'shell';
-  const lines = value.split('\n');
+  const lang = normalizeLanguage(field.language || 'shell');
+  const [expanded, setExpanded] = useState(false);
+  const lineCount = value === '' ? 0 : value.split('\n').length;
+
+  // 放大编辑时支持 Esc 关闭（Node 测试环境没有 document，跳过）
+  useEffect(() => {
+    if (!expanded || typeof document === 'undefined') return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setExpanded(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [expanded]);
+
   return h(
     'div',
-    { className: 'dsh-devops-code' },
+    { className: 'dsh-devops-code-block', 'data-language': lang, 'data-expanded': expanded ? 'true' : undefined },
     h(
       'div',
-      { className: 'dsh-devops-code-gutter', 'aria-hidden': 'true' },
-      lines.map((_, i) => String(i + 1)).join('\n'),
+      { className: 'dsh-devops-code-toolbar' },
+      h('span', { className: 'dsh-devops-code-lang' }, CODE_LANG_LABEL[lang] || lang),
+      h('span', { className: 'dsh-devops-hint' }, lineCount + ' 行'),
+      h('div', { className: 'dsh-devops-spacer' }),
+      h(Button, {
+        size: 'sm',
+        icon: 'eye',
+        label: '放大编辑',
+        className: 'dsh-devops-code-expand',
+        title: '在更大的编辑器中编写脚本（Esc 关闭）',
+        onClick: () => setExpanded(true),
+      }),
     ),
-    h('textarea', {
-      className: 'dsh-devops-code-area',
+    h(CodeSurface, {
       value,
-      spellCheck: false,
+      language: lang,
       placeholder: field.placeholder || '',
-      rows: field.rows || 6,
-      onChange: (e) => props.onChange(e.target.value),
-      onKeyDown: (e) => {
-        // Tab 插入两个空格，避免焦点跑掉
-        if (e.key === 'Tab') {
-          e.preventDefault();
-          const el = e.target;
-          const start = el.selectionStart;
-          const end = el.selectionEnd;
-          const next = value.slice(0, start) + '  ' + value.slice(end);
-          props.onChange(next);
-          requestAnimationFrame(() => {
-            el.selectionStart = el.selectionEnd = start + 2;
-          });
-        }
-      },
+      minRows: field.rows || 8,
+      onChange: props.onChange,
     }),
+    expanded
+      ? h(
+          'div',
+          {
+            className: 'dsh-devops-code-full-backdrop',
+            onMouseDown: (e) => {
+              if (e.target === e.currentTarget) setExpanded(false);
+            },
+          },
+          h(
+            'div',
+            {
+              className: 'dsh-devops-code-full',
+              role: 'dialog',
+              'aria-modal': 'true',
+              'aria-label': '放大编辑脚本',
+              'data-role': 'code-fullscreen',
+            },
+            h(
+              'div',
+              { className: 'dsh-devops-code-full-head' },
+              h('span', { className: 'dsh-devops-code-full-title dsh-devops-truncate' }, field.label || field.name || '脚本'),
+              h('span', { className: 'dsh-devops-tag dsh-devops-monospace' }, CODE_LANG_LABEL[lang] || lang),
+              h('span', { className: 'dsh-devops-hint' }, lineCount + ' 行'),
+              h('div', { className: 'dsh-devops-spacer' }),
+              h(Button, {
+                size: 'sm',
+                variant: 'ghost',
+                icon: 'close',
+                label: '关闭',
+                className: 'dsh-devops-code-full-close',
+                title: '关闭（Esc）',
+                onClick: () => setExpanded(false),
+              }),
+            ),
+            h(CodeSurface, {
+              value,
+              language: lang,
+              placeholder: field.placeholder || '',
+              fill: true,
+              minRows: 12,
+              onChange: props.onChange,
+            }),
+          ),
+        )
+      : null,
   );
 }
-
 /* ------------------------------------------------------------------ *
  * path.dir / path.file：浏览 + 校验
  * ------------------------------------------------------------------ */
@@ -511,6 +614,22 @@ function MultiSelectControl(props) {
  * ref:envset / ref:snippet：引用选择
  * ------------------------------------------------------------------ */
 
+/**
+ * 读取字段控件的数据上下文（App 用 state 构造的纯数据包）。
+ *
+ * 宿主 ctx 是 Cordis context：读取未 inject 的服务属性会直接抛
+ * `cannot get property "xxx" without inject`（渲染「引用脚本片段」字段时
+ * 表现为整块面板报错）。字段数据只是可选增强，误传时退化为空值即可。
+ */
+function dataOf(ctx, key) {
+  if (!ctx) return undefined;
+  try {
+    return ctx[key];
+  } catch {
+    return undefined;
+  }
+}
+
 function RefControl(props) {
   const field = props.field;
   const isEnvSet = field.type === 'ref:envset';
@@ -544,6 +663,227 @@ function RefControl(props) {
 }
 
 /* ------------------------------------------------------------------ *
+ * ref:pipeline：流水线引用（可搜索下拉 + 可手填）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 大小写不敏感的模糊匹配。
+ *
+ * 两级策略（都要支持，用户要的是「输入名字能模糊匹配」）：
+ *  1. 子串命中：优先级最高，命中位置越靠前、文本越短分越高；
+ *  2. 子序列命中：按顺序散落出现也算（如 "bd" 命中 "build-deploy"），分数次之。
+ *
+ * @returns {{score:number, positions:number[]}|null} null 表示不匹配
+ */
+function fuzzyMatch(text, query) {
+  const source = String(text === null || text === undefined ? '' : text);
+  const needle = String(query === null || query === undefined ? '' : query).trim().toLowerCase();
+  if (!needle) return { score: 0, positions: [] };
+  if (!source) return null;
+
+  const lower = source.toLowerCase();
+  const at = lower.indexOf(needle);
+  if (at >= 0) {
+    const positions = [];
+    for (let i = 0; i < needle.length; i += 1) positions.push(at + i);
+    // 前缀命中额外加分；同样命中时短文本更相关
+    return { score: 100 + (at === 0 ? 50 : 0) + Math.max(0, 20 - source.length), positions };
+  }
+
+  // 子序列：按顺序逐个找字符
+  const positions = [];
+  let qi = 0;
+  for (let i = 0; i < lower.length && qi < needle.length; i += 1) {
+    if (lower[i] === needle[qi]) {
+      positions.push(i);
+      qi += 1;
+    }
+  }
+  if (qi === needle.length) return { score: 40 + Math.max(0, 10 - source.length / 4), positions };
+  return null;
+}
+
+/**
+ * 按查询词过滤流水线候选（纯函数，便于直接断言）。
+ *
+ * 匹配 name / id / description 三处，name 命中权重最高（用户是按名字找的）。
+ * 查询词为空时返回全部（按名称排序），这样下拉一打开就能看到可选项。
+ *
+ * @returns {Array<{pipeline:object, score:number, namePositions:number[], idPositions:number[]}>}
+ */
+function matchPipelines(query, pipelines) {
+  const list = Array.isArray(pipelines) ? pipelines : [];
+  const needle = String(query === null || query === undefined ? '' : query).trim();
+  const out = [];
+  for (const item of list) {
+    if (!item || !item.id) continue;
+    const byName = fuzzyMatch(item.name || '', needle);
+    const byId = fuzzyMatch(item.id, needle);
+    const byDesc = needle ? fuzzyMatch(item.description || '', needle) : null;
+    if (needle && !byName && !byId && !byDesc) continue;
+    const score = Math.max(
+      byName ? byName.score + 25 : 0,
+      byId ? byId.score + 10 : 0,
+      byDesc ? byDesc.score : 0,
+    );
+    out.push({
+      pipeline: item,
+      score,
+      namePositions: byName ? byName.positions : [],
+      idPositions: byId ? byId.positions : [],
+    });
+  }
+  out.sort((a, b) =>
+    (b.score - a.score)
+    || String(a.pipeline.name || a.pipeline.id).localeCompare(String(b.pipeline.name || b.pipeline.id)));
+  return out;
+}
+
+/** 把命中的字符高亮出来（不新增 CSS 类，用既有 token 内联着色）。 */
+function highlightMatches(text, positions) {
+  const source = String(text === null || text === undefined ? '' : text);
+  const set = new Set(Array.isArray(positions) ? positions : []);
+  if (set.size === 0) return source;
+  const parts = [];
+  let buffer = '';
+  for (let i = 0; i < source.length; i += 1) {
+    if (set.has(i)) {
+      if (buffer) {
+        parts.push(buffer);
+        buffer = '';
+      }
+      parts.push(
+        h(
+          'mark',
+          {
+            key: 'h' + i,
+            style: {
+              background: 'var(--dsw-alias-state-warn-tertiary)',
+              color: 'inherit',
+              borderRadius: '2px',
+              padding: '0 1px',
+            },
+          },
+          source[i],
+        ),
+      );
+    } else {
+      buffer += source[i];
+    }
+  }
+  if (buffer) parts.push(buffer);
+  return parts;
+}
+
+/** 候选列表一次最多渲染多少条（超出给一句提示并可继续输入收窄）。 */
+const PIPELINE_MAX_ROWS = 8;
+
+/**
+ * 流水线引用控件（ref:pipeline）。
+ *
+ * 与 ref:envset / ref:snippet 的静态 Select 不同，这里必须：
+ *  - 可搜索：输入名称或 ID 都能模糊匹配（大小写不敏感）；
+ *  - 显示名字而不只是 id（用户要的是「选择已有的流水线」）；
+ *  - 仍允许手填任意 id（流水线可能尚未创建或来自导入）——输入框本身就是值；
+ *  - 当前值不在候选里时显示「(未知流水线) xxx」而不是空白。
+ *
+ * props: { field, value, onChange, ctx }
+ */
+function PipelineRefControl(props) {
+  const field = props.field || {};
+  const value = props.value === undefined || props.value === null ? '' : String(props.value);
+  // 候选来自 App 下发的 fieldCtx.pipelines；缺失/非数组时降级为空列表（不崩）。
+  const raw = dataOf(props.ctx, 'pipelines');
+  const pipelines = Array.isArray(raw) ? raw : [];
+  const selected = pipelines.find((item) => item && item.id === value) || null;
+  const matches = matchPipelines(value, pipelines);
+  const shown = matches.slice(0, PIPELINE_MAX_ROWS);
+  const hidden = matches.length - shown.length;
+  const unknown = value !== '' && !selected;
+
+  return h(
+    'div',
+    null,
+    h(
+      'div',
+      { className: 'dsh-devops-field-row' },
+      h(TextInput, {
+        value,
+        placeholder: field.placeholder || '输入流水线名称或 ID 搜索',
+        onChange: (v) => props.onChange(v),
+        onBlur: () => props.onBlur && props.onBlur(),
+      }),
+      value
+        ? h(Button, { size: 'sm', variant: 'ghost', icon: 'close', title: '清除引用', onClick: () => props.onChange('') })
+        : null,
+    ),
+
+    // 当前值的可读反馈：已知显示名字，未知显式标注，绝不静默留白
+    h(
+      'div',
+      { style: { marginTop: '4px' } },
+      selected
+        ? h(
+            'span',
+            { className: 'dsh-devops-hint' },
+            '当前：',
+            h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, selected.name || selected.id),
+            ' · ',
+            h('span', { className: 'dsh-devops-monospace' }, selected.id),
+          )
+        : unknown
+          ? h(Chip, { tone: 'warn', title: '候选里没有这条流水线，将按原样使用' }, '(未知流水线) ' + value)
+          : h('span', { className: 'dsh-devops-hint' }, '未选择（可点下方候选，或直接输入 ID）'),
+    ),
+
+    pipelines.length === 0
+      ? h('div', { className: 'dsh-devops-hint', style: { marginTop: '4px' } }, '没有可选的流水线（仍可直接输入 ID）')
+      : shown.length === 0
+        ? h('div', { className: 'dsh-devops-hint', style: { marginTop: '4px' } }, '没有匹配的流水线（可直接输入 ID 新建引用）')
+        : h(
+            'div',
+            { className: 'dsh-devops-list', style: { marginTop: '6px', maxHeight: '190px', overflow: 'auto' } },
+            shown.map((entry) =>
+              h(
+                'div',
+                {
+                  key: entry.pipeline.id,
+                  className: 'dsh-devops-list-row',
+                  'data-active': entry.pipeline.id === value ? 'true' : undefined,
+                  role: 'button',
+                  tabIndex: 0,
+                  title: entry.pipeline.name ? entry.pipeline.name + ' · ' + entry.pipeline.id : entry.pipeline.id,
+                  onClick: () => props.onChange(entry.pipeline.id),
+                  onKeyDown: (event) => {
+                    if (event && (event.key === 'Enter' || event.key === ' ')) {
+                      if (event.preventDefault) event.preventDefault();
+                      props.onChange(entry.pipeline.id);
+                    }
+                  },
+                },
+                h(
+                  'span',
+                  { className: 'dsh-devops-truncate' },
+                  highlightMatches(entry.pipeline.name || entry.pipeline.id, entry.namePositions),
+                ),
+                h(
+                  'span',
+                  { className: 'dsh-devops-monospace', style: { color: 'var(--dsw-alias-label-tertiary)', flex: 'none' } },
+                  highlightMatches(entry.pipeline.id, entry.idPositions),
+                ),
+                entry.pipeline.category
+                  ? h('span', { className: 'dsh-devops-tag' }, entry.pipeline.category)
+                  : null,
+              ),
+            ),
+            hidden > 0
+              ? h('div', { className: 'dsh-devops-hint' }, '还有 ' + hidden + ' 条匹配，继续输入可收窄')
+              : null,
+          ),
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * 分发器
  * ------------------------------------------------------------------ */
 
@@ -552,12 +892,13 @@ function enumOptions(field, ctx) {
   if (Array.isArray(field.options) && field.options.length) return field.options;
   const from = field.optionsFrom;
   if (!from) return [];
-  if (from === 'server') return (ctx.servers || []).map((s) => s.id);
+  const servers = dataOf(ctx, 'servers') || [];
+  if (from === 'server') return servers.map((s) => s.id);
   if (from === 'shell') return ['auto', 'bash', 'sh', 'zsh', 'pwsh', 'powershell', 'cmd'];
   if (from.indexOf('runtime:') === 0) {
     const kind = from.slice('runtime:'.length);
     const set = new Set(RUNTIME_VERSIONS[kind] || []);
-    for (const server of ctx.servers || []) {
+    for (const server of servers) {
       for (const key of Object.keys(server.runtimes || {})) {
         if (key.indexOf(kind + ':') === 0) set.add(key.slice(kind.length + 1));
       }
@@ -613,7 +954,7 @@ function FieldControl(props) {
       control = h(Select, {
         value: value === undefined ? '' : value,
         placeholder: field.placeholder || '（默认）',
-        options: enumOptions(field, props.ctx || {}),
+        options: enumOptions(field, props.ctx),
         onChange,
       });
       break;
@@ -638,7 +979,7 @@ function FieldControl(props) {
       control = h(Select, {
         value: value === undefined ? '' : value,
         placeholder: field.placeholder || '（用默认服务器）',
-        options: (props.ctx && props.ctx.servers ? props.ctx.servers : []).map((s) => ({
+        options: (dataOf(props.ctx, 'servers') || []).map((s) => ({
           value: s.id,
           label: s.name + (s.kind === 'local' ? '（本机）' : ' · ' + (s.host || '')),
         })),
@@ -648,7 +989,7 @@ function FieldControl(props) {
     case 'runtime':
       control = h(RuntimeControl, Object.assign({}, common, {
         serverId: resolved,
-        defaultServer: props.ctx && props.ctx.defaultServer,
+        defaultServer: dataOf(props.ctx, 'defaultServer'),
         serverFor: props.serverFor,
         onProvisioned: props.onProvisioned,
       }));
@@ -660,10 +1001,14 @@ function FieldControl(props) {
       control = h(MultiSelectControl, Object.assign({}, common, { options: props.optionValues }));
       break;
     case 'ref:envset':
-      control = h(RefControl, Object.assign({}, common, { envsets: props.ctx && props.ctx.envsets }));
+      control = h(RefControl, Object.assign({}, common, { envsets: dataOf(props.ctx, 'envsets') }));
       break;
     case 'ref:snippet':
-      control = h(RefControl, Object.assign({}, common, { snippets: props.ctx && props.ctx.snippets }));
+      control = h(RefControl, Object.assign({}, common, { snippets: dataOf(props.ctx, 'snippets') }));
+      break;
+    case 'ref:pipeline':
+      // 候选来自 App 下发的 fieldCtx.pipelines（缺失时控件内降级为空列表）
+      control = h(PipelineRefControl, Object.assign({}, common, { ctx: props.ctx }));
       break;
     case 'string':
     default:
@@ -687,4 +1032,8 @@ exports.GlobControl = GlobControl;
 exports.RuntimeControl = RuntimeControl;
 exports.KeyValueControl = KeyValueControl;
 exports.MultiSelectControl = MultiSelectControl;
+exports.RefControl = RefControl;
+exports.PipelineRefControl = PipelineRefControl;
+exports.matchPipelines = matchPipelines;
+exports.fuzzyMatch = fuzzyMatch;
 exports.enumOptions = enumOptions;

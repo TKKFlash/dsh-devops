@@ -99,7 +99,10 @@ export function createExecutorRegistry(options = {}) {
     const serverId = serverIdOf(server);
     let executor = sshExecutors.get(serverId);
     if (!executor || executor.__lazy) {
-      executor = factory({ config, log, provisioner, ctx });
+      // 必须把 server 传给工厂：createSshExecutor 依赖它做认证配置校验
+      // （auth.type:'none' 守卫）与连接参数解析。漏传会让**任何** SSH 服务器
+      // 报「createSshExecutor 需要 server 参数」，表现为"测试连接"永远不通。
+      executor = factory({ server, config, log, provisioner, ctx });
       executor.id = executor.id || `ssh:${serverId}`;
       executor.kind = 'ssh';
       sshExecutors.set(serverId, executor);
@@ -116,7 +119,8 @@ export function createExecutorRegistry(options = {}) {
     const pending = new Map(); // method → Promise<real executor>
     async function real() {
       const factory = await loadSshFactory();
-      const created = factory(deps);
+      // 同 resolveAsync：server 必须传下去，否则解析出的执行器缺认证上下文。
+      const created = factory(Object.assign({}, deps, { server }));
       created.id = created.id || `ssh:${serverId}`;
       created.kind = 'ssh';
       // 创建成功后替换缓存，后续调用直接命中真实对象

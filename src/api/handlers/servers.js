@@ -11,13 +11,21 @@ import { validateServer, newId } from '../../model/schema.js'
 import { resolveEnvAsync } from '../../model/variables.js'
 import { badRequest, notFound, conflict } from '../http.js'
 
-/** 只保留可安全回传的 auth 字段（引用名，不含任何密钥值）。 */
+/**
+ * 只保留可安全回传的 auth 字段。
+ *
+ * 注意 keyPath 是**本机私钥文件的路径**，不是密钥内容本身，
+ * 因此它可以（也必须）进白名单：否则用户在界面上选的私钥文件
+ * 会在保存时被这里丢掉，读取时也拿不回来，前端表现为"填了没用"。
+ * 真正的密钥明文（password / privateKey）依旧一律丢弃（契约 §5.2）。
+ */
 function safeAuth(auth) {
-  if (!auth || typeof auth !== 'object') return { type: 'key', keyRef: '', passwordRef: '' }
+  if (!auth || typeof auth !== 'object') return { type: 'key', keyRef: '', passwordRef: '', keyPath: '' }
   return {
     type: ['key', 'password', 'agent', 'none'].includes(auth.type) ? auth.type : 'key',
     keyRef: typeof auth.keyRef === 'string' ? auth.keyRef : '',
     passwordRef: typeof auth.passwordRef === 'string' ? auth.passwordRef : '',
+    keyPath: typeof auth.keyPath === 'string' ? auth.keyPath : '',
   }
 }
 

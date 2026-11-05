@@ -7,8 +7,115 @@
  * - 任何返回值都不含明文口令的日志输出路径。
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
 import { SshError } from './errors.js';
 import { collectSecrets, emitLog } from './util.js';
+
+/**
+ * 私钥文件大小上限（1MB）。
+ * 私钥文本通常只有几 KB；超过这个量级基本可以断定是「选错文件了」（比如选到磁盘镜像），
+ * 与其读进内存再让 ssh2 报一句难懂的错，不如在读取前就拒绝并说清楚。
+ */
+export const MAX_PRIVATE_KEY_BYTES = 1024 * 1024;
+
+/** 判断一个字符串是否「像」本机路径（用于 keyRef 兼作路径的情形的候选筛选）。 */
+function looksLikePath(value) {
+  if (typeof value !== 'string') return false;
+  const s = value.trim();
+  if (s === '') return false;
+  // 绝对路径（POSIX 或 Windows 盘符）、UNC、家目录展开、显式相对路径
+  if (/^[/\\]/.test(s)) return true;
+  if (/^[A-Za-z]:[/\\]/.test(s)) return true;
+  if (s.startsWith('~')) return true;
+  if (s.startsWith('./') || s.startsWith('.\\')) return true;
+  // 含路径分隔符且带常见私钥后缀：兼容用户写相对路径
+  return /[/\\]/.test(s) && /\.(pem|key|ppk|pub|txt)$/i.test(s);
+}
+
+/** 把家目录前缀展开成绝对路径（ssh 用户习惯写 ~/.ssh/id_rsa）。 */
+function expandHome(value) {
+  const s = String(value ?? '').trim();
+  if (!s.startsWith('~')) return s;
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  if (!home) return s;
+  if (s === '~') return home;
+  if (s.startsWith('~/') || s.startsWith('~\\')) return home.replace(/[/\\]+$/, '') + s.slice(1);
+  return s;
+}
+
+/**
+ * 读取本机私钥文件内容。
+ *
+ * 安全与可用性约束（契约 §2.3「私钥来源优先级」）：
+ * - 只接受**常规文件**：目录、socket、设备等一律拒绝（点名真实类型，便于排查）；
+ * - 大小受限：> {@link MAX_PRIVATE_KEY_BYTES} 直接拒绝，绝不整份读进内存；
+ * - 失败信息**只含路径与原因**，绝不含文件内容；
+ * - 成功返回的私钥内容由调用方放入 secrets 供打码，本函数自己不写任何日志。
+ *
+ * @param {string} target 本机路径（支持 ~ 前缀）
+ * @returns {Promise<string>} 私钥文本
+ * @throws {SshError} code: 'private-key-file-not-found' | 'private-key-file-not-regular'
+ *                    | 'private-key-file-too-large' | 'private-key-file-unreadable' | 'private-key-file-empty'
+ */
+export async function readPrivateKeyFile(target) {
+  const raw = String(target ?? '').trim();
+  if (raw === '') {
+    throw new SshError('私钥文件路径为空，无法读取。', 'private-key-file-not-found', { path: '' });
+  }
+  const file = expandHome(raw);
+
+  let info;
+  try {
+    info = await stat(file);
+  } catch (error) {
+    const notFound = error?.code === 'ENOENT' || error?.code === 'ENOTDIR';
+    throw new SshError(
+      notFound
+        ? `私钥文件不存在：${file}。请确认路径正确（Windows 路径形如 C:\\Users\\you\\.ssh\\id_rsa）。`
+        : `无法访问私钥文件 ${file}：${error?.code || error?.message || error}。`,
+      notFound ? 'private-key-file-not-found' : 'private-key-file-unreadable',
+      { path: file },
+    );
+  }
+
+  if (typeof info.isFile === 'function' && !info.isFile()) {
+    // 目录是最常见的手滑；把真实类型说出来，用户一眼就知道该往下点一层
+    const kind = typeof info.isDirectory === 'function' && info.isDirectory()
+      ? '目录'
+      : (typeof info.isSymbolicLink === 'function' && info.isSymbolicLink() ? '符号链接' : '非普通文件');
+    throw new SshError(
+      `私钥路径指向的是${kind}而不是文件：${file}。请选择具体的私钥文件（例如 id_rsa / id_ed25519）。`,
+      'private-key-file-not-regular',
+      { path: file, kind },
+    );
+  }
+
+  if (Number.isFinite(info.size) && info.size > MAX_PRIVATE_KEY_BYTES) {
+    throw new SshError(
+      `私钥文件过大（${info.size} 字节，上限 ${MAX_PRIVATE_KEY_BYTES} 字节）：${file}。` +
+        '私钥通常只有几 KB，请确认没有选错文件。',
+      'private-key-file-too-large',
+      { path: file, size: info.size, limit: MAX_PRIVATE_KEY_BYTES },
+    );
+  }
+
+  let content;
+  try {
+    content = await readFile(file, 'utf8');
+  } catch (error) {
+    // 只回错误原因，绝不回文件内容
+    throw new SshError(
+      `读取私钥文件失败 ${file}：${error?.code || error?.message || error}。请检查文件权限。`,
+      'private-key-file-unreadable',
+      { path: file },
+    );
+  }
+
+  if (content.trim() === '') {
+    throw new SshError(`私钥文件内容为空：${file}。`, 'private-key-file-empty', { path: file });
+  }
+  return content;
+}
 
 /**
  * 兼容多种 credentials 服务形状：`resolve(ref)` / `get(ref)` / `read(ref)` /
@@ -149,21 +256,61 @@ export async function resolveAuth(server, options = {}) {
   };
 
   if (type === 'key') {
+    const label = server?.name || server?.id || '?';
     const keyRef = auth.keyRef || auth.privateKeyRef || config?.privateKeyRef || '';
+    const keyPath = typeof auth.keyPath === 'string' ? auth.keyPath.trim() : '';
+
+    /**
+     * 私钥来源优先级（契约 §2.3「私钥来源优先级」，逐条落地）：
+     *   1. 测试注入点 getPrivateKey（正式入口，便于 verifier 不造宿主 ctx）
+     *   2. 显式 auth.keyPath（本机文件路径）—— 用户明确指定，最可信
+     *   3. auth.keyRef 凭据引用
+     *   4. auth.keyRef 本身是一个存在的本机文件路径 → 读该文件
+     *   5. 插件 config.privateKey
+     */
     let privateKey = typeof getPrivateKey === 'function' ? await getPrivateKey(server) : undefined;
-    if (!privateKey) privateKey = await read(keyRef);
+    let source = privateKey ? 'injected' : '';
+
+    if (!privateKey && keyPath) {
+      privateKey = await readPrivateKeyFile(keyPath);
+      source = 'auth.keyPath';
+    }
+
+    if (!privateKey && keyRef) {
+      // keyRef 优先按「凭据引用」解释；解析不到内容再按「路径」兜底解释。
+      // 这样两种用户写法都能用，且不会因为一个名字恰好像路径就丢掉凭据能力。
+      const fromCredential = await read(keyRef);
+      if (fromCredential) {
+        privateKey = fromCredential;
+        source = 'auth.keyRef(credential)';
+      } else if (looksLikePath(keyRef)) {
+        try {
+          privateKey = await readPrivateKeyFile(keyRef);
+          source = 'auth.keyRef(path)';
+        } catch (error) {
+          // keyRef 被当作路径解释时失败：不要把它变成「缺私钥」这种模糊错误，
+          // 直接把真实原因（不存在/是目录/太大）抛出去，用户才知道该改哪里。
+          if (keyPath === '') throw error;
+        }
+      }
+    }
+
     if (!privateKey) privateKey = config?.privateKey;
+    if (privateKey && !source) source = 'config.privateKey';
 
     const passphrase = (await read(auth.passphraseRef)) || config?.passphrase;
-    // 私钥允许以文件路径形式给出（宿主机上的路径），此时交给 ssh2 自行读取。
     if (!privateKey) {
       throw new SshError(
-        `服务器「${server?.name || server?.id || '?'}」使用密钥认证，但没有解析到私钥。` +
-          '请检查 auth.keyRef 指向的凭据是否存在（或在凭据服务中创建它）。',
+        `服务器「${label}」使用密钥认证，但没有解析到私钥。` +
+          '请在「私钥文件」中选择本机私钥文件（auth.keyPath），' +
+          '或填写凭据服务里的私钥凭据名（auth.keyRef）。' +
+          (keyRef ? `（已尝试的引用：${keyRef}）` : ''),
         'missing-private-key',
       );
     }
+    // 私钥内容必须进 secrets 供写盘前打码；此处**不写任何日志**，避免私钥落盘。
     secrets.push(privateKey, passphrase);
+    emitLog(log, 'debug', `SSH 私钥来源：${source || 'unknown'}（内容已加入打码词表，不落日志）。`);
     return {
       method: 'key',
       secrets: collectSecrets(secrets),

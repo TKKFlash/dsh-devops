@@ -407,4 +407,236 @@ describe('engine/run', { skip }, () => {
     assert.equal(r2.status, 'success');
     assert.notEqual(r1.runId, r2.runId, '两次运行 id 必须不同');
   });
+
+  /* ============================ 定义快照语义 ============================ */
+  // 用户要求：「编辑后不影响之前运行过和运行中的流水线。」
+  // 以下用例都真的构造「先起运行 → 改 store 里的流水线定义 → 重试/继续调度」，
+  // 并用**脚本输出的标记**断言实际执行的是哪一份定义（不是只断言字段存在）。
+
+  /** 读取某步骤的落盘日志文本 */
+  function stepLogText(runId, stepId, run) {
+    const path = run?.steps?.[stepId]?.logPath || logs.pathFor(runId, stepId);
+    return existsSync(path) ? readFileSync(path, 'utf8') : '';
+  }
+
+  /** 造一条多 job 的流水线（契约 §2.1 形状），jobs 由调用方给定 */
+  function pipeWithJobs(id, jobs, over = {}) {
+    return {
+      id,
+      name: id,
+      version: 1,
+      variables: [],
+      envSetRefs: [],
+      defaults: { server: 'local', timeoutMs: 30000 },
+      stages: [{ id: 's1', name: 'S1', parallel: false, jobs }],
+      createdAt: 0,
+      updatedAt: 0,
+      ...over,
+    };
+  }
+
+  function job(id, script, needs = []) {
+    return {
+      id, name: id, node: 'shell.exec', server: 'local', needs,
+      when: 'on_success', allowFailure: false,
+      retry: { max: 0, delayMs: 10 }, timeoutMs: 30000,
+      with: { script },
+    };
+  }
+
+  test('★ 快照 a)：编辑定义后对旧 run 调 retryStep，执行的是旧快照', async () => {
+    const pid = 'snap-a';
+    const oldDef = pipeWithJobs(pid, [
+      // 失败方式必须跨平台可靠：PowerShell 5.1 既不接受 && 也不接受 exit 1，
+      // 故用「两行脚本 + node 非零退出码」：标记照常打印，退出码由最后一条命令决定。
+      job('j1', ['echo OLD-J1-MARKER', 'node -e "process.exit(1)"'].join('\n')),
+      job('j2', 'echo OLD-J2-MARKER', ['j1']),
+    ]);
+    const first = await engine.start({ pipeline: oldDef }).wait();
+    assert.equal(first.status, 'failed', '旧定义以非零码退出，应失败');
+    assert.notEqual(first.run.steps.j2.status, 'success', 'j2 应因上游失败被跳过');
+
+    // —— 用户编辑同一条流水线：j1 改成必成功、j2 换脚本、再加一个新步骤 j3 ——
+    const newDef = structuredClone(oldDef);
+    newDef.name = '已编辑的新定义';
+    newDef.stages[0].jobs[0].with.script = 'echo NEW-J1-MARKER';
+    newDef.stages[0].jobs[1].with.script = 'echo NEW-J2-MARKER';
+    newDef.stages[0].jobs.push(job('j3', 'echo NEW-J3-MARKER'));
+    await store.pipelines.put(pid, newDef);
+    assert.equal(store.pipelines.get(pid).stages[0].jobs[0].with.script, 'echo NEW-J1-MARKER', 'store 里确实已是新定义');
+
+    // —— 对旧 run 重试 j1：必须跑旧快照 ——
+    const res = await engine.retryStep(first.runId, 'j1').wait();
+
+    const j1log = stepLogText(first.runId, 'j1', res.run);
+    assert.ok(j1log.includes('OLD-J1-MARKER'), '重试必须执行旧定义的 j1 脚本，实际日志：' + JSON.stringify(j1log.slice(0, 300)));
+    assert.ok(!j1log.includes('NEW-J1-MARKER'), '重试不得跑到编辑后的新定义上');
+    // 旧 j1 是 exit 1：若误用新定义（echo 成功）会变成 success，这里必须仍然失败
+    assert.equal(res.run.steps.j1.status, 'failed', '旧定义非零退出决定重试结果仍是 failed');
+    assert.equal(res.status, 'failed', '误用新定义会让本次运行 success，实际 ' + res.status);
+    // 旧快照里没有 j3，运行记录不得凭空多出新步骤
+    assert.ok(!res.run.steps.j3, '不得出现编辑后才新增的步骤 j3');
+    // 快照内容就是提交时那一份
+    assert.equal(res.run.pipelineSnapshot.name, 'snap-a', '快照应保留提交时的 name');
+    assert.equal(
+      res.run.pipelineSnapshot.stages[0].jobs[0].with.script,
+      ['echo OLD-J1-MARKER', 'node -e "process.exit(1)"'].join('\n'),
+      '快照里必须仍是旧脚本',
+    );
+  });
+
+  test('★ 快照 b)：运行中的 run 在其定义被编辑后，继续调度仍按旧快照', async () => {
+    const pid = 'snap-b';
+    // 阶段 s1 慢（约 900ms），阶段 s2 打标记；staged 模式 → 阶段串行
+    const oldDef = {
+      id: pid, name: pid, version: 1, variables: [], envSetRefs: [],
+      defaults: { server: 'local', timeoutMs: 30000 },
+      stages: [
+        { id: 's1', name: 'S1', parallel: false, jobs: [job('j1', 'node -e "setTimeout(()=>{},900)"')] },
+        { id: 's2', name: 'S2', parallel: false, jobs: [job('j2', 'echo OLD-STAGE2-MARKER')] },
+      ],
+      createdAt: 0, updatedAt: 0,
+    };
+    const h = engine.start({ pipeline: oldDef });
+    const running = await waitFor(() => h.run.steps.j1.status === 'running', { timeoutMs: 8000 });
+    assert.ok(running, 'j1 应进入 running，实际 ' + h.run.steps.j1.status);
+
+    // —— 运行还没结束，用户就编辑了这条流水线的第二阶段 ——
+    const newDef = structuredClone(oldDef);
+    newDef.stages[1].jobs[0].with.script = 'echo NEW-STAGE2-MARKER';
+    await store.pipelines.put(pid, newDef);
+
+    const res = await h.wait();
+    assert.equal(res.status, 'success', '运行应成功，实际 ' + res.status);
+
+    const j2log = stepLogText(res.runId, 'j2', res.run);
+    assert.ok(j2log.includes('OLD-STAGE2-MARKER'), '运行中编辑后，继续调度必须用旧快照，实际日志：' + JSON.stringify(j2log.slice(0, 300)));
+    assert.ok(!j2log.includes('NEW-STAGE2-MARKER'), '运行中的 run 不得切到编辑后的新定义');
+
+    // 更强的证据：以 start(runId) **恢复/重跑** 这条既有运行（这正是「从既有 run 继续调度」的路径）。
+    // 此时 store 里仍是被编辑过的新定义；必须仍然按该 run 的快照执行。
+    assert.equal(store.pipelines.get(pid).stages[1].jobs[0].with.script, 'echo NEW-STAGE2-MARKER', '前置条件：store 仍是新定义');
+    const resumed = await engine.start(res.runId).wait();
+    assert.equal(resumed.status, 'success', '恢复运行应成功，实际 ' + resumed.status);
+    const resumedLog = stepLogText(resumed.runId, 'j2', resumed.run);
+    assert.ok(resumedLog.includes('OLD-STAGE2-MARKER'), 'start(runId) 继续调度必须用旧快照，实际：' + JSON.stringify(resumedLog.slice(0, 300)));
+    assert.ok(!resumedLog.includes('NEW-STAGE2-MARKER'), 'start(runId) 不得切到编辑后的新定义');
+    // 必须仍是同一条运行（复用 run 记录，而非新建）
+    assert.equal(resumed.runId, res.runId, 'start(runId) 应复用该运行记录');
+  });
+
+  test('★ 快照 c)：新 run 用的是提交时的定义，且与提交对象深度隔离', async () => {
+    const pid = 'snap-c';
+    const submitted = pipeWithJobs(pid, [job('j1', 'echo SUBMITTED-AT-START')]);
+    const h = engine.start({ pipeline: submitted });
+    // start 之后立刻改调用方手里的对象 + 改 store：都不得影响本次运行
+    submitted.stages[0].jobs[0].with.script = 'echo MUTATED-AFTER-START';
+    await store.pipelines.put(pid, pipeWithJobs(pid, [job('j1', 'echo LATER-EDIT-IN-STORE')]));
+
+    const res = await h.wait();
+    const j1log = stepLogText(res.runId, 'j1', res.run);
+    assert.ok(j1log.includes('SUBMITTED-AT-START'), '新 run 必须用提交时的定义，实际日志：' + JSON.stringify(j1log.slice(0, 300)));
+    // start 返回后改调用方对象，【一定】影响不到执行：
+    // start() 是同步完成的（快照在返回前就已冻结），此后调度只认快照
+    assert.ok(!j1log.includes('MUTATED-AFTER-START'), 'start 后修改调用方对象不得影响本次运行');
+    assert.ok(!j1log.includes('LATER-EDIT-IN-STORE'), 'start 后编辑 store 不得影响本次运行');
+    assert.equal(
+      res.run.pipelineSnapshot.stages[0].jobs[0].with.script,
+      'echo SUBMITTED-AT-START',
+      '快照必须是提交时的深拷贝',
+    );
+    // 快照不可被就地改写（冻结），保证运行期不会有别处偷改定义
+    assert.ok(Object.isFrozen(res.run.pipelineSnapshot), 'pipelineSnapshot 必须被冻结');
+    assert.ok(Object.isFrozen(res.run.pipelineSnapshot.stages[0]), '快照须为深冻结');
+  });
+
+  test('★ 快照：retry(runId) 整跑复跑沿用快照，且不依赖 store 里的当前定义', async () => {
+    const pid = 'snap-rerun';
+    const oldDef = pipeWithJobs(pid, [job('j1', 'echo RERUN-OLD-DEF')]);
+    const first = await engine.start({ pipeline: oldDef }).wait();
+    assert.equal(first.status, 'success');
+
+    // 编辑定义，然后把流水线整个删掉（快照必须自给自足）
+    await store.pipelines.put(pid, pipeWithJobs(pid, [job('j1', 'echo RERUN-NEW-DEF')]));
+    await store.pipelines.delete(pid);
+    assert.equal(store.pipelines.get(pid), undefined, '前置条件：当前定义已不存在');
+
+    const again = await engine.retry(first.runId).wait();
+    assert.equal(again.status, 'success', '有快照时应能脱离 store 复跑，实际 ' + again.status);
+    const log = stepLogText(again.runId, 'j1', again.run);
+    assert.ok(log.includes('RERUN-OLD-DEF'), '复跑必须用快照定义，实际：' + JSON.stringify(log.slice(0, 200)));
+    assert.ok(!log.includes('RERUN-NEW-DEF'), '复跑不得用编辑后的定义');
+  });
+
+  test('★ 降级：无快照的历史 run 用当前定义继续，不抛错并给出 warning', async () => {
+    const pid = 'legacy-p';
+    // 手造一条「老数据」：完全没有 pipelineSnapshot 字段
+    const legacy = {
+      id: 'run-legacy-no-snapshot',
+      pipelineId: pid,
+      pipelineName: '历史运行',
+      status: 'failed',
+      trigger: 'manual',
+      startedAt: 1,
+      finishedAt: 2,
+      variables: {},
+      steps: {
+        j1: {
+          id: 'j1', name: 'J1', stage: 's1', node: 'shell.exec', server: 'local',
+          status: 'failed', phase: 'settled', startedAt: 1, finishedAt: 2, exitCode: 1,
+          attempt: 1, lastOutputAt: 2, bytes: 0, logPath: '', spillPath: '',
+          outputs: {}, error: '旧失败', detail: '旧失败',
+        },
+      },
+      parentRunId: null, parentStepId: null, callChain: [pid],
+    };
+    await store.runs.put(legacy.id, legacy);
+    await store.pipelines.put(pid, pipeWithJobs(pid, [job('j1', 'echo LEGACY-CURRENT-DEF')]));
+
+    events.length = 0;
+    // 不应抛错；应回退到当前定义
+    const res = await engine.retryStep(legacy.id, 'j1').wait();
+    assert.equal(res.run.steps.j1.status, 'success', '老数据重试应回退当前定义并成功');
+    const log = stepLogText(legacy.id, 'j1', res.run);
+    assert.ok(log.includes('LEGACY-CURRENT-DEF'), '降级路径应执行当前定义，实际：' + JSON.stringify(log.slice(0, 200)));
+    assert.ok(
+      events.some((e) => e.type === 'warning' && /没有定义快照/.test(e.message ?? '')),
+      '降级必须给出 warning，实际事件：' + JSON.stringify(events.filter((e) => e.type === 'warning').map((e) => e.message)),
+    );
+  });
+
+  test('★ 降级边界：无快照且流水线已被删除 → 抛出可读错误（与改造前行为一致）', async () => {
+    const legacy = {
+      id: 'run-legacy-gone',
+      pipelineId: 'legacy-gone-p',
+      pipelineName: '已删除',
+      status: 'failed', trigger: 'manual', startedAt: 1, finishedAt: 2, variables: {},
+      steps: {
+        j1: {
+          id: 'j1', name: 'J1', stage: 's1', node: 'shell.exec', server: 'local',
+          status: 'failed', phase: 'settled', startedAt: 1, finishedAt: 2, exitCode: 1,
+          attempt: 1, lastOutputAt: 2, bytes: 0, logPath: '', spillPath: '',
+          outputs: {}, error: 'x', detail: 'x',
+        },
+      },
+      parentRunId: null, parentStepId: null, callChain: ['legacy-gone-p'],
+    };
+    await store.runs.put(legacy.id, legacy);
+    assert.throws(
+      () => engine.retryStep(legacy.id, 'j1'),
+      /流水线不存在/,
+      '无快照 + 定义已删，必须给可读错误而不是静默成功',
+    );
+  });
+
+  test('★ 快照不污染 SSE 摘要（§3.11 的 run 摘要不得夹带整份定义）', async () => {
+    const res = await engine.start({ pipeline: pipeWith('echo summary-shape') }).wait();
+    const summary = engine.summarizeRun(res.run);
+    assert.ok(!('pipelineSnapshot' in summary), 'SSE run 摘要不得携带 pipelineSnapshot（体积）');
+    assert.equal(summary.pipelineId, 'p1', '摘要仍须保留 pipelineId');
+    // 但 run 记录本身必须落盘带快照，供重试使用
+    const stored = store.runs.get(res.runId);
+    assert.ok(stored.pipelineSnapshot, '运行记录必须持久化快照');
+    assert.equal(stored.pipelineSnapshot.id, 'p1', '落盘快照内容正确');
+  });
 });

@@ -53,7 +53,7 @@ function blankServer() {
     host: '',
     port: 22,
     user: '',
-    auth: { type: 'key', keyRef: '', passwordRef: '' },
+    auth: { type: 'key', keyRef: '', passwordRef: '', keyPath: '' },
     shell: '',
     workdir: '',
     tags: [],
@@ -107,6 +107,95 @@ function EnvPreview(props) {
         : null,
     ),
   );
+}
+
+/**
+ * 私钥文件选择（task-13）：文本输入 + 「浏览」按钮，复用既有 api.fsList。
+ *
+ * 为什么不用 fields.js 的 PathControl：
+ *  - PathControl 是**节点字段**控件，需要 field 描述符、serverField/resolveServer、
+ *    recent/remember 等一组 props；而这里是「服务器自身的认证配置」，不是节点字段，
+ *    硬套要伪造一堆 props，反而更脆；
+ *  - 本机私钥始终在**本机**（auth.keyPath 的语义就是宿主机路径），
+ *    因此浏览目标固定为 'local'，不需要 serverField 解析；
+ *  - 既有 .dsh-devops-dropdown 系列样式可直接复用，零新增 CSS。
+ *
+ * 浏览失败不影响手填：用户在任何情况下都能直接粘贴绝对路径。
+ */
+function KeyFileField(props) {
+  const [open, setOpen] = useState(false);
+  const [listing, setListing] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const value = props.value === undefined || props.value === null ? '' : String(props.value);
+  // 本机私钥固定浏览本机；不要用被编辑服务器的 id（那可能是远端 SSH 机）
+  const browseServer = 'local';
+
+  async function browse(path) {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.fsList(browseServer, path || value || '.');
+      setListing(result);
+      setOpen(true);
+    } catch (err) {
+      // 降级要可见：提示错误但仍让用户手填，不留死点击
+      setError(err.message || String(err));
+      setListing(null);
+      setOpen(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function pick(path) {
+    props.onChange(path);
+    setOpen(false);
+  }
+
+  function joinPath(base, name) {
+    if (!base || base === '.') return name;
+    const sep = base.indexOf('\\') !== -1 && base.indexOf('/') === -1 ? '\\' : '/';
+    return base.replace(/[\\/]+$/, '') + sep + name;
+  }
+
+  return h(Field, {
+    label: '私钥文件路径（本机）',
+    description: '留空则用下方凭据名。优先于凭据名；文件只支持本机路径',
+  },
+    h('div', null,
+      h('div', { className: 'dsh-devops-field-row' },
+        h('div', { style: { position: 'relative', flex: 1 } },
+          h(TextInput, {
+            value,
+            placeholder: pathPlaceholder('file'),
+            onChange: (v) => props.onChange(v),
+          }),
+          open
+            ? h('div', { className: 'dsh-devops-dropdown' },
+                h('div', { className: 'dsh-devops-dropdown-note' },
+                  listing ? (listing.path || value || '.') : (error || '无法读取目录')),
+                listing && listing.parent
+                  ? h('div', { className: 'dsh-devops-dropdown-row', onClick: () => browse(listing.parent) }, '..')
+                  : null,
+                listing && listing.entries && listing.entries.length
+                  ? listing.entries.map((entry) =>
+                      h('div', {
+                        key: entry.name,
+                        className: 'dsh-devops-dropdown-row',
+                        onClick: () => (entry.isDir ? browse(joinPath(listing.path, entry.name)) : pick(joinPath(listing.path, entry.name))),
+                      }, entry.name))
+                  : null,
+                h('div', { className: 'dsh-devops-dropdown-note', style: { borderTop: '0.5px solid var(--dsw-alias-border-l2)' } },
+                  '在本机中选择私钥文件'),
+              )
+            : null),
+        h(Button, { size: 'sm', icon: 'box', label: '浏览', busy, onClick: () => browse(value) }),
+        open ? h(Button, { size: 'sm', variant: 'ghost', label: '关闭', onClick: () => setOpen(false) }) : null,
+      ),
+      value ? h('div', { className: 'dsh-devops-hint', style: { marginTop: '4px' } },
+        '私钥内容只会在连接时读取，不会写入服务器配置，也不会出现在日志或导出里。') : null,
+    ));
 }
 
 /** 服务器编辑弹层。 */
@@ -180,8 +269,14 @@ function ServerModal(props) {
           (server.auth && server.auth.type) === 'password'
             ? h(Field, { label: '密码凭据名', description: '来自 ctx.credentials，不写明文' },
                 h(TextInput, { value: (server.auth && server.auth.passwordRef) || '', onChange: (v) => patch({ auth: Object.assign({}, server.auth, { passwordRef: v }) }) }))
-            : h(Field, { label: '私钥凭据名', description: '来自 ctx.credentials，不写明文' },
-                h(TextInput, { value: (server.auth && server.auth.keyRef) || '', onChange: (v) => patch({ auth: Object.assign({}, server.auth, { keyRef: v }) }) })),
+            : h('div', null,
+                h(KeyFileField, {
+                  server,
+                  value: (server.auth && server.auth.keyPath) || '',
+                  onChange: (v) => patch({ auth: Object.assign({}, server.auth, { keyPath: v }) }),
+                }),
+                h(Field, { label: '私钥凭据名', description: '来自 ctx.credentials，不写明文；上方填了文件时以文件优先' },
+                  h(TextInput, { value: (server.auth && server.auth.keyRef) || '', onChange: (v) => patch({ auth: Object.assign({}, server.auth, { keyRef: v }) }) }))),
         )
       : null,
     h(Field, {
@@ -204,7 +299,7 @@ function ServerModal(props) {
       { className: 'dsh-devops-field-row' },
       h(Field, { label: '允许在该机安装环境' }, h(Switch, { value: !!server.allowProvision, onChange: (v) => patch({ allowProvision: v }) })),
     ),
-    h('div', { className: 'dsh-devops-hint' }, '密钥值只从凭据服务解析，日志与导出均不会出现明文。'),
+    h('div', { className: 'dsh-devops-hint' }, '密钥值只从凭据服务或本机私钥文件读取，日志与导出均不会出现明文。'),
   );
 }
 
@@ -369,5 +464,7 @@ exports.Servers = Servers;
 exports.blankServer = blankServer;
 // 导出以下三项供测试直接验证（不影响界面行为）
 exports.ServerModal = ServerModal;
+// 导出私钥文件字段控件，供测试直接验证（不影响界面行为）
+exports.KeyFileField = KeyFileField;
 exports.workdirHint = workdirHint;
 exports.describeWorkdirSource = describeWorkdirSource;

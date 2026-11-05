@@ -253,6 +253,10 @@ __def("./styles.js", function (module, exports, require) {
 /**
  * 样式：一次性注入 <style>，类名前缀 .dsh-devops-，颜色只用 --dsw-alias-* token。
  * 深色模式无需额外处理——token 自身随主题切换。
+ *
+ * 设计语言抽取自参考实现（src/client/theme.ts + DevopsUI.module.css）：
+ * 令牌层全部 var(<宿主 token>, <回退>)；胶囊按钮；color-mix 淡色徽标；
+ * tab 下划线指示条；虚线空态卡；elevation 阴影。**只读消费 --dsw-alias-*，不重定义。**
  */
 
 /** 只在首次调用时插入样式标签，重复调用无副作用。 */
@@ -266,18 +270,92 @@ function ensureStyles() {
 }
 
 // 注意：r-lg / r-xl 用 fallback 串起来，兼容不同版本的 token 集合。
+// 令牌层挂在 .dsh-devops-root 上而非 body/:root：主面板与状态栏根元素都带该类，
+// 且宿主令牌是 body 级声明，作用域在这里才能稳定继承。
 const CSS = `
 .dsh-devops-root{
+  /* ── 令牌层：每一项都是 var(<宿主 token>, <回退>)，宿主换肤/换主题整体跟随 ── */
   --dv-r-sm: var(--dsw-radius-sm, 6px);
   --dv-r-md: var(--dsw-radius-md, 8px);
   --dv-r-lg: var(--dsw-radius-lg, 12px);
   --dv-r-xl: var(--dsw-radius-panel, 16px);
-  --dv-border: var(--dsw-alias-border-l1);
-  --dv-border-2: var(--dsw-alias-border-l2);
-  --dv-border-3: var(--dsw-alias-border-l3);
-  --dv-fg: var(--dsw-alias-label-primary);
-  --dv-fg-2: var(--dsw-alias-label-secondary);
-  --dv-fg-3: var(--dsw-alias-label-tertiary);
+  --dv-r-pill: 999px;
+  --dv-border: var(--dsw-alias-border-l1, rgba(0,0,0,.06));
+  --dv-border-2: var(--dsw-alias-border-l2, rgba(0,0,0,.1));
+  --dv-border-3: var(--dsw-alias-border-l3, rgba(0,0,0,.14));
+  --dv-border-4: var(--dsw-alias-border-l4, rgba(0,0,0,.18));
+  --dv-fg: var(--dsw-alias-label-primary, #0f1115);
+  --dv-fg-2: var(--dsw-alias-label-secondary, #61666b);
+  --dv-fg-3: var(--dsw-alias-label-tertiary, #81858c);
+  --dv-fg-4: var(--dsw-alias-label-dimmed, #b9bec6);
+  --dv-caption: var(--dsw-alias-label-caption, #9aa0a6);
+  --dv-surface: var(--dsw-alias-bg-layer-1, transparent);
+  --dv-surface-2: var(--dsw-alias-bg-layer-2, transparent);
+  --dv-surface-3: var(--dsw-alias-bg-layer-3, transparent);
+  --dv-inset: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-layer-2, transparent));
+  --dv-input-bg: var(--dsw-alias-bg-layer-1, transparent);
+  --dv-code-bg: var(--dsw-alias-markdown-code-block, transparent);
+  --dv-primary: var(--dsw-alias-brand-primary, var(--dsw-alias-button-primary-fill, #4176e6));
+  --dv-accent: var(--dsw-alias-state-business-primary, #4176e6);
+  --dv-btn: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, #0f1115));
+  --dv-btn-hover: var(--dsw-alias-button-primary-hover, var(--dsw-alias-brand-primary, #43454a));
+  --dv-btn-fg: var(--dsw-alias-label-primary-foreground, #ffffff);
+  --dv-hover: var(--dsw-alias-interactive-bg-hover, rgba(38,49,72,.06));
+  --dv-active: var(--dsw-alias-interactive-bg-active, var(--dsw-alias-interactive-bg-hover, rgba(38,49,72,.1)));
+  --dv-mask: var(--dsw-alias-bg-mask-1, rgba(0,0,0,.28));
+  --dv-blur: var(--dsw-mask-blur, blur(2px));
+  --dv-ok: var(--dsw-alias-state-success-primary, #22c55e);
+  --dv-warn: var(--dsw-alias-state-warn-primary, #f59e0b);
+  --dv-err: var(--dsw-alias-state-error-primary, #ec1313);
+  --dv-err-soft: var(--dsw-alias-state-error-secondary, #f25a5a);
+  --dv-busy: var(--dsw-alias-state-business-primary, #4176e6);
+  --dv-idle: var(--dsw-alias-state-idle-primary, #9aa0a6);
+  --dv-toast-bg: var(--dsw-alias-toast-bg, var(--dsw-alias-bg-layer-3, #353638));
+  --dv-toast-fg: var(--dsw-alias-toast-label, var(--dsw-alias-label-primary, #f9fafb));
+  --dv-elev-1: var(--dsw-elevation-panel, 0 4px 16px rgba(0,0,0,.16));
+  --dv-elev-2: var(--dsw-elevation-prominent, 0 12px 40px rgba(0,0,0,.28));
+  --dv-code-font: var(--dsw-font-family-code, monospace);
+  --dv-font-xs: calc(10px + var(--dsh-content-font-delta, 0px));
+  --dv-font-sm: var(--dsh-content-font-size-secondary, 12px);
+  --dv-font: var(--dsh-content-font-size, 13px);
+  --dv-font-lg: calc(15px + var(--dsh-content-font-delta, 0px));
+  --dv-font-xl: calc(18px + var(--dsh-content-font-delta, 0px));
+  --dv-t-fast: .12s;
+  --dv-t: .16s;
+  --dv-t-slow: .24s;
+  --dv-ease: cubic-bezier(.2,.7,.3,1);
+
+  /* ─────────────────────────────────────────────────────────────────────
+     终端调色板：**自带深色，不跟随宿主主题变白**（用户明确要"黑色的 Linux 终端"）。
+     固定色值集中在此定义，规则里只 var()/color-mix 复用——这样硬编码色值总量可控，
+     且深浅主题下终端始终是深底浅字。
+     ───────────────────────────────────────────────────────────────────── */
+  --dv-term-bg: #0d1117;                                             /* 终端主底 */
+  --dv-term-bg-2: color-mix(in srgb,var(--dv-term-bg) 88%,white);     /* 工具栏/行号槽 */
+  --dv-term-bg-3: color-mix(in srgb,var(--dv-term-bg) 78%,white);     /* gap 提示条 */
+  --dv-term-line: color-mix(in srgb,var(--dv-term-bg) 70%,white);     /* 终端内分隔线 */
+  --dv-term-fg: #d6deeb;                                             /* 终端主文字 */
+  --dv-term-dim: color-mix(in srgb,var(--dv-term-fg) 58%,var(--dv-term-bg));  /* 行号/次要 */
+  --dv-term-stderr: #ff7b72;                                         /* stderr 偏红 */
+  --dv-term-sel: color-mix(in srgb,var(--dv-term-fg) 24%,transparent);/* 选区 */
+  --dv-term-mark: color-mix(in srgb,var(--dv-warn) 38%,transparent);  /* 过滤命中底 */
+  --dv-term-font: var(--dsw-font-family-code,ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace);
+  --dv-term-fs: 12.5px;
+  --dv-term-lh: 1.6;
+  --dv-term-pad-y: 8px;
+  --dv-term-pad-x: 10px;
+
+  /* ── 语法 token 调色板（syntax.js 的 kind → 类名）。深底上的可读色相，参考 One Dark。── */
+  --dv-tok-keyword: #c792ea;   /* 关键字：紫 */
+  --dv-tok-string: #c3e88d;    /* 字符串：绿 */
+  --dv-tok-number: #f78c6c;    /* 数字：橙 */
+  --dv-tok-function: #82aaff;  /* 函数：蓝 */
+  --dv-tok-operator: #89ddff;  /* 运算符：青 */
+  --dv-tok-builtin: #ffcb6b;   /* 内置：琥珀 */
+  --dv-tok-variable: #7fdbca;  /* 变量：青绿 */
+  --dv-tok-type: color-mix(in srgb,var(--dv-tok-builtin) 62%,white); /* 类型：浅黄（与内置拉开） */
+  --dv-tok-comment: var(--dv-term-dim);                              /* 注释：灰（斜体） */
+  --dv-tok-plain: var(--dv-term-fg);
   box-sizing:border-box;
   display:flex;
   min-height:0;
@@ -285,7 +363,7 @@ const CSS = `
   width:100%;
   color:var(--dv-fg);
   background:var(--dsw-alias-bg-base);
-  font-size:13px;
+  font-size:var(--dv-font);
   line-height:20px;
 }
 .dsh-devops-root *,.dsh-devops-root *::before,.dsh-devops-root *::after{box-sizing:border-box}
@@ -301,13 +379,14 @@ const CSS = `
 .dsh-devops-nav-item{
   display:flex;align-items:center;gap:8px;width:100%;min-height:30px;padding:4px 8px;
   border:none;background:transparent;color:var(--dv-fg-2);border-radius:var(--dv-r-md);
-  cursor:pointer;font-size:13px;text-align:left;
+  cursor:pointer;font-size:var(--dv-font);text-align:left;
+  transition:background-color var(--dv-t) var(--dv-ease),color var(--dv-t) var(--dv-ease);
 }
-.dsh-devops-nav-item:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dv-fg)}
-.dsh-devops-nav-item[data-active="true"]{background:var(--dsw-alias-interactive-bg-active,hover);color:var(--dv-fg);font-weight:500}
+.dsh-devops-nav-item:hover{background:var(--dv-hover);color:var(--dv-fg)}
+.dsh-devops-nav-item[data-active="true"]{background:var(--dv-active);color:var(--dv-fg);font-weight:500}
 .dsh-devops-nav-dot{
   flex:none;display:inline-flex;align-items:center;justify-content:center;
-  width:18px;height:18px;font-size:13px;
+  width:18px;height:18px;font-size:var(--dv-font);
 }
 
 /* ---------- 主区 ---------- */
@@ -317,8 +396,8 @@ const CSS = `
   padding:calc(var(--dsh-frame-top-clearance,0px) + 10px) 16px 10px 16px;
   border-bottom:0.5px solid var(--dv-border-3);
 }
-.dsh-devops-title{font-size:15px;font-weight:500;color:var(--dv-fg);margin:0}
-.dsh-devops-sub{color:var(--dv-fg-3);font-size:12px}
+.dsh-devops-title{font-size:var(--dv-font-lg);font-weight:600;color:var(--dv-fg);margin:0}
+.dsh-devops-sub{color:var(--dv-fg-3);font-size:var(--dv-font-sm)}
 .dsh-devops-spacer{flex:1}
 .dsh-devops-body{flex:1;min-height:0;overflow:auto;padding:14px 16px 24px 16px}
 .dsh-devops-body[data-flush="true"]{padding:0;overflow:hidden;display:flex;flex-direction:column}
@@ -326,128 +405,205 @@ const CSS = `
 /* ---------- 状态条（页内） ---------- */
 .dsh-devops-statusbar-inline{
   flex:none;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-  padding:5px 16px;font-size:12px;color:var(--dv-fg-3);
+  padding:5px 16px;font-size:var(--dv-font-sm);color:var(--dv-fg-3);
   border-bottom:0.5px solid var(--dv-border-3);
-  background:var(--dsw-alias-bg-layer-1);
+  background:var(--dv-surface);
 }
+/* 徽标：淡色底 + 同色文字（color-mix），替代原先「描边 + 文字色」的单调写法 */
 .dsh-devops-chip{
-  display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border-radius:999px;
-  border:0.5px solid var(--dv-border);font-size:11px;color:var(--dv-fg-2);
-  background:var(--dsw-alias-bg-layer-2,#0000);
+  display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:var(--dv-r-pill);
+  border:0.5px solid transparent;font-size:var(--dv-font-xs);font-weight:500;
+  color:var(--dv-fg-2);background:color-mix(in srgb,var(--dv-fg-3) 14%,transparent);
+  transition:background-color var(--dv-t) var(--dv-ease),color var(--dv-t) var(--dv-ease);
 }
-.dsh-devops-chip[data-tone="ok"]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}
-.dsh-devops-chip[data-tone="warn"]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}
-.dsh-devops-chip[data-tone="error"]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}
-.dsh-devops-chip[data-tone="busy"]{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}
-.dsh-devops-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dsw-alias-state-idle-primary)}
-.dsh-devops-dot[data-tone="ok"]{background:var(--dsw-alias-state-success-primary)}
-.dsh-devops-dot[data-tone="warn"]{background:var(--dsw-alias-state-warn-primary)}
-.dsh-devops-dot[data-tone="error"]{background:var(--dsw-alias-state-error-primary)}
-.dsh-devops-dot[data-tone="busy"]{background:var(--dsw-alias-state-business-primary);animation:dsh-devops-pulse 1.2s ease-in-out infinite}
+.dsh-devops-chip[data-tone="ok"]{color:var(--dv-ok);background:color-mix(in srgb,var(--dv-ok) 14%,transparent)}
+.dsh-devops-chip[data-tone="warn"]{color:var(--dv-warn);background:color-mix(in srgb,var(--dv-warn) 16%,transparent)}
+.dsh-devops-chip[data-tone="error"]{color:var(--dv-err-soft);background:color-mix(in srgb,var(--dv-err-soft) 14%,transparent)}
+.dsh-devops-chip[data-tone="busy"]{color:var(--dv-busy);background:color-mix(in srgb,var(--dv-busy) 14%,transparent)}
+.dsh-devops-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dv-idle)}
+.dsh-devops-dot[data-tone="ok"]{background:var(--dv-ok)}
+.dsh-devops-dot[data-tone="warn"]{background:var(--dv-warn)}
+.dsh-devops-dot[data-tone="error"]{background:var(--dv-err)}
+.dsh-devops-dot[data-tone="busy"]{background:var(--dv-busy);animation:dsh-devops-pulse 1.2s ease-in-out infinite}
 @keyframes dsh-devops-pulse{0%,100%{opacity:.35}50%{opacity:1}}
 
-/* ---------- 通用控件 ---------- */
+/* ---------- 通用控件：胶囊按钮 ---------- */
 .dsh-devops-btn{
   display:inline-flex;align-items:center;justify-content:center;gap:6px;
-  min-height:28px;padding:3px 10px;border-radius:var(--dv-r-md);cursor:pointer;
+  min-height:28px;padding:4px 12px;border-radius:var(--dv-r-pill);cursor:pointer;
   border:0.5px solid var(--dv-border);background:transparent;color:var(--dv-fg);
-  font-size:12px;white-space:nowrap;
+  font-size:var(--dv-font-sm);font-weight:500;white-space:nowrap;
+  transition:background-color var(--dv-t) var(--dv-ease),border-color var(--dv-t) var(--dv-ease),
+    color var(--dv-t) var(--dv-ease),box-shadow var(--dv-t) var(--dv-ease),transform var(--dv-t-fast) var(--dv-ease);
 }
-.dsh-devops-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-devops-btn:hover:not(:disabled){background:var(--dv-hover);border-color:var(--dv-border-3)}
+.dsh-devops-btn:active:not(:disabled){background:var(--dv-active);transform:translateY(0.5px)}
+.dsh-devops-btn:focus-visible{outline:2px solid color-mix(in srgb,var(--dv-accent) 55%,transparent);outline-offset:1px}
 .dsh-devops-btn:disabled{opacity:.45;cursor:default}
 .dsh-devops-btn[data-variant="primary"]{
-  background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary));
-  border-color:transparent;color:var(--dsw-alias-label-primary-foreground,#fff);
+  background:var(--dv-btn);border-color:transparent;color:var(--dv-btn-fg);
+  box-shadow:0 1px 2px rgba(0,0,0,.12);
 }
-.dsh-devops-btn[data-variant="primary"]:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover,var(--dsw-alias-brand-primary))}
-.dsh-devops-btn[data-variant="danger"]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}
+.dsh-devops-btn[data-variant="primary"]:hover:not(:disabled){background:var(--dv-btn-hover);border-color:transparent}
+.dsh-devops-btn[data-variant="primary"]:active:not(:disabled){background:var(--dv-btn-hover)}
+.dsh-devops-btn[data-variant="danger"]{
+  color:var(--dv-err-soft);border-color:transparent;
+  background:color-mix(in srgb,var(--dv-err-soft) 12%,transparent);
+}
+.dsh-devops-btn[data-variant="danger"]:hover:not(:disabled){background:color-mix(in srgb,var(--dv-err-soft) 20%,transparent);border-color:transparent}
 .dsh-devops-btn[data-variant="ghost"]{border-color:transparent;color:var(--dv-fg-2)}
-.dsh-devops-btn[data-size="sm"]{min-height:22px;padding:1px 7px;font-size:11px}
-.dsh-devops-btn[data-active="true"]{background:var(--dsw-alias-interactive-bg-active,hover)}
+.dsh-devops-btn[data-variant="ghost"]:hover:not(:disabled){background:var(--dv-hover);color:var(--dv-fg);border-color:transparent}
+.dsh-devops-btn[data-size="sm"]{min-height:22px;padding:2px 9px;font-size:var(--dv-font-xs)}
+.dsh-devops-btn[data-active="true"]{background:var(--dv-active);border-color:var(--dv-border-3);color:var(--dv-fg)}
 .dsh-devops-input,.dsh-devops-select,.dsh-devops-textarea{
-  width:100%;min-height:28px;padding:3px 8px;border-radius:var(--dv-r-md);
-  border:0.5px solid var(--dv-border);background:var(--dsw-alias-bg-layer-1,#0000);
-  color:var(--dv-fg);font-size:12px;font-family:inherit;outline:none;
+  /* min-width:0/max-width:100%：检查器很窄时控件必须能被压缩，
+     否则会撑出横向滚动条（截图里"执行条件/服务器"被挤到看不见就是这个原因）。 */
+  width:100%;min-width:0;max-width:100%;min-height:28px;padding:3px 9px;border-radius:var(--dv-r-md);
+  border:0.5px solid var(--dv-border-2);background:var(--dv-input-bg);
+  color:var(--dv-fg);font-size:var(--dv-font-sm);font-family:inherit;outline:none;
+  transition:border-color var(--dv-t) var(--dv-ease),box-shadow var(--dv-t) var(--dv-ease),background-color var(--dv-t) var(--dv-ease);
 }
-.dsh-devops-input:focus,.dsh-devops-select:focus,.dsh-devops-textarea:focus{border-color:var(--dsw-alias-state-business-primary)}
+.dsh-devops-input:hover:not(:disabled),.dsh-devops-select:hover:not(:disabled),.dsh-devops-textarea:hover:not(:disabled){border-color:var(--dv-border-3)}
+.dsh-devops-input:focus,.dsh-devops-select:focus,.dsh-devops-textarea:focus{
+  border-color:var(--dv-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--dv-accent) 22%,transparent);
+}
 .dsh-devops-textarea{min-height:64px;resize:vertical;line-height:18px}
-.dsh-devops-input::placeholder,.dsh-devops-textarea::placeholder{color:var(--dsw-alias-label-caption)}
+.dsh-devops-input::placeholder,.dsh-devops-textarea::placeholder{color:var(--dv-caption)}
 .dsh-devops-select{cursor:pointer}
 .dsh-devops-switch{
-  position:relative;width:34px;height:18px;border-radius:999px;flex:none;cursor:pointer;
-  border:0.5px solid var(--dv-border);background:var(--dsw-alias-bg-layer-2,#0000);padding:0;
+  position:relative;width:34px;height:18px;border-radius:var(--dv-r-pill);flex:none;cursor:pointer;
+  border:0.5px solid var(--dv-border);background:var(--dv-surface-2);padding:0;
+  transition:background-color var(--dv-t) var(--dv-ease),border-color var(--dv-t) var(--dv-ease);
 }
-.dsh-devops-switch[data-on="true"]{background:var(--dsw-alias-brand-primary);border-color:transparent}
+.dsh-devops-switch[data-on="true"]{background:var(--dv-primary);border-color:transparent}
 .dsh-devops-switch span{
   position:absolute;top:1px;left:1px;width:14px;height:14px;border-radius:50%;
-  background:var(--dsw-alias-switch-thumb,#fff);transition:left .12s ease;
+  background:var(--dsw-alias-switch-thumb,#fff);
+  transition:left var(--dv-t) var(--dv-ease);
 }
 .dsh-devops-switch[data-on="true"] span{left:17px}
 
 /* ---------- 字段 / 检查器 ---------- */
 .dsh-devops-field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
-.dsh-devops-field-head{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dv-fg-2)}
+.dsh-devops-field-head{display:flex;align-items:center;gap:6px;font-size:var(--dv-font-sm);color:var(--dv-fg-2)}
 .dsh-devops-field-label{font-weight:500;color:var(--dv-fg)}
-.dsh-devops-required{color:var(--dsw-alias-state-error-primary)}
-.dsh-devops-field-desc{font-size:11px;color:var(--dv-fg-3);line-height:16px}
-.dsh-devops-field-row{display:flex;gap:6px;align-items:center}
-.dsh-devops-field-error{font-size:11px;color:var(--dsw-alias-state-error-primary)}
-.dsh-devops-hint{font-size:11px;color:var(--dv-fg-3)}
+.dsh-devops-required{color:var(--dv-err)}
+.dsh-devops-field-desc{font-size:var(--dv-font-xs);color:var(--dv-fg-3);line-height:16px}
+.dsh-devops-field-row{display:flex;gap:6px;align-items:center;min-width:0;flex-wrap:wrap}
+.dsh-devops-field-row>*{min-width:0}
+.dsh-devops-field-error{font-size:var(--dv-font-xs);color:var(--dv-err-soft)}
+.dsh-devops-hint{font-size:var(--dv-font-xs);color:var(--dv-fg-3)}
+/* 代码编辑器 = 深色终端：着色层（pre）+ 透明 textarea 叠加。
+   两层必须**严格同字体/行高/内边距**，textarea 文字透明、caret 可见，否则光标与着色错位。 */
 .dsh-devops-code{
-  display:flex;border:0.5px solid var(--dv-border);border-radius:var(--dv-r-md);
-  overflow:hidden;background:var(--dsw-alias-markdown-code-block,#0000);font-size:12px;
+  display:flex;border:0.5px solid var(--dv-term-line);border-radius:var(--dv-r-md);
+  overflow:hidden;background:var(--dv-term-bg);color:var(--dv-term-fg);
+  font-family:var(--dv-term-font);font-size:var(--dv-term-fs);line-height:var(--dv-term-lh);
 }
 .dsh-devops-code-gutter{
-  flex:none;padding:6px 6px 6px 8px;text-align:right;color:var(--dsw-alias-label-caption);
-  background:var(--dsw-alias-bg-layer-2,#0000);user-select:none;font-family:var(--dsw-font-family-code,monospace);
-  line-height:18px;white-space:pre;
+  flex:none;display:flex;flex-direction:column;align-items:flex-end;
+  padding:var(--dv-term-pad-y) 8px var(--dv-term-pad-y) 10px;
+  background:var(--dv-term-bg-2);color:var(--dv-term-dim);
+  border-right:0.5px solid var(--dv-term-line);
+  user-select:none;font-family:inherit;font-size:inherit;line-height:inherit;
+  white-space:pre;font-variant-numeric:tabular-nums;
 }
+.dsh-devops-code-lineno{display:block;line-height:inherit}
+.dsh-devops-code-shell{position:relative;flex:1;min-width:0;display:flex;align-items:stretch}
+.dsh-devops-code-hl{
+  position:absolute;inset:0;margin:0;overflow:hidden;pointer-events:none;
+  padding:var(--dv-term-pad-y) var(--dv-term-pad-x);
+  font-family:inherit;font-size:inherit;line-height:inherit;
+  white-space:pre;background:transparent;color:var(--dv-term-fg);
+}
+.dsh-devops-code-hline{white-space:pre}
 .dsh-devops-code-area{
-  flex:1;min-height:110px;padding:6px 8px;border:none;outline:none;resize:vertical;
-  background:transparent;color:var(--dv-fg);line-height:18px;font-size:12px;
-  font-family:var(--dsw-font-family-code,monospace);white-space:pre;overflow-wrap:normal;overflow-x:auto;
+  position:relative;z-index:1;flex:1;min-width:0;min-height:110px;resize:vertical;
+  padding:var(--dv-term-pad-y) var(--dv-term-pad-x);
+  border:none;outline:none;background:transparent;
+  color:transparent;caret-color:var(--dv-term-fg);
+  font-family:inherit;font-size:inherit;line-height:inherit;
+  white-space:pre;overflow-wrap:normal;overflow:auto;tab-size:2;
+  /* 固定滚动条槽：否则出现滚动条时 textarea 变窄，长行会与高亮层横向错位。 */
+  scrollbar-gutter:stable;
 }
-.dsh-devops-monospace{font-family:var(--dsw-font-family-code,monospace)}
+.dsh-devops-code-area::placeholder{color:var(--dv-term-dim)}
+.dsh-devops-code-area::selection{background:var(--dv-term-sel);color:transparent}
+.dsh-devops-monospace{font-family:var(--dv-code-font)}
 
 /* ---------- 面板 / 卡片 ---------- */
 .dsh-devops-card{
   border:0.5px solid var(--dv-border);border-radius:var(--dv-r-lg);
-  background:var(--dsw-alias-bg-layer-1,#0000);padding:12px;margin-bottom:12px;
+  background:var(--dv-surface);padding:12px;margin-bottom:12px;
+  transition:border-color var(--dv-t) var(--dv-ease),background-color var(--dv-t) var(--dv-ease),
+    box-shadow var(--dv-t) var(--dv-ease);
 }
+.dsh-devops-card:hover{border-color:var(--dv-border-2)}
 .dsh-devops-card-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-.dsh-devops-card-title{font-size:13px;font-weight:500;color:var(--dv-fg);margin:0}
+.dsh-devops-card-title{font-size:var(--dv-font);font-weight:600;color:var(--dv-fg);margin:0}
 .dsh-devops-grid{display:grid;gap:12px}
 .dsh-devops-grid[data-cols="2"]{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
 .dsh-devops-grid[data-cols="3"]{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
-.dsh-devops-kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12px}
+.dsh-devops-kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:var(--dv-font-sm)}
 .dsh-devops-kv dt{color:var(--dv-fg-3)}
 .dsh-devops-kv dd{margin:0;color:var(--dv-fg);word-break:break-all}
-.dsh-devops-empty{padding:22px;text-align:center;color:var(--dv-fg-3);font-size:12px}
+/* 空态：虚线边框卡片，hover 变色 */
+.dsh-devops-empty{
+  padding:22px;text-align:center;color:var(--dv-fg-3);font-size:var(--dv-font-sm);
+  border:0.5px dashed var(--dv-border-3);border-radius:var(--dv-r-lg);background:transparent;
+  transition:border-color var(--dv-t) var(--dv-ease),color var(--dv-t) var(--dv-ease),background-color var(--dv-t) var(--dv-ease);
+}
+.dsh-devops-empty:hover{border-color:var(--dv-primary);color:var(--dv-fg)}
 .dsh-devops-list{display:flex;flex-direction:column;gap:4px}
 .dsh-devops-list-row{
   display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--dv-r-md);
-  border:0.5px solid transparent;cursor:pointer;font-size:12px;
+  border:0.5px solid transparent;cursor:pointer;font-size:var(--dv-font-sm);
+  transition:background-color var(--dv-t) var(--dv-ease),border-color var(--dv-t) var(--dv-ease);
 }
-.dsh-devops-list-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsh-devops-list-row[data-active="true"]{background:var(--dsw-alias-interactive-bg-active,hover);border-color:var(--dv-border-2)}
+.dsh-devops-list-row:hover{background:var(--dv-hover)}
+.dsh-devops-list-row[data-active="true"]{background:var(--dv-active);border-color:var(--dv-border-2)}
 .dsh-devops-truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .dsh-devops-tag{
-  display:inline-flex;align-items:center;padding:0 6px;border-radius:999px;
-  border:0.5px solid var(--dv-border);font-size:10px;color:var(--dv-fg-3);
+  display:inline-flex;align-items:center;padding:0 6px;border-radius:var(--dv-r-pill);
+  border:0.5px solid transparent;font-size:var(--dv-font-xs);color:var(--dv-fg-3);
+  background:color-mix(in srgb,var(--dv-fg-3) 12%,transparent);
 }
-.dsh-devops-link{color:var(--dsw-alias-link);cursor:pointer;background:none;border:none;padding:0;font-size:12px}
+.dsh-devops-link{color:var(--dsw-alias-link);cursor:pointer;background:none;border:none;padding:0;font-size:var(--dv-font-sm)}
+.dsh-devops-link:hover{text-decoration:underline}
+
+/* ---------- 页签（页内二级导航）：下划线指示条 + hover 底色 ---------- */
+.dsh-devops-tabs{
+  display:flex;align-items:center;gap:4px;margin-bottom:12px;
+  border-bottom:0.5px solid var(--dv-border-2);overflow-x:auto;
+}
+.dsh-devops-tab{
+  position:relative;display:inline-flex;align-items:center;gap:6px;
+  padding:6px 12px;margin-bottom:-0.5px;border:none;background:transparent;
+  color:var(--dv-fg-3);font-size:var(--dv-font-sm);font-weight:500;cursor:pointer;white-space:nowrap;
+  border-radius:var(--dv-r-sm) var(--dv-r-sm) 0 0;
+  transition:color var(--dv-t) var(--dv-ease),background-color var(--dv-t) var(--dv-ease);
+}
+.dsh-devops-tab::after{
+  content:"";position:absolute;left:8px;right:8px;bottom:0;height:2px;border-radius:2px 2px 0 0;
+  background:var(--dv-accent);opacity:0;
+  transition:opacity var(--dv-t) var(--dv-ease);
+}
+.dsh-devops-tab:hover{color:var(--dv-fg);background:var(--dv-hover)}
+.dsh-devops-tab[data-active="true"]{color:var(--dv-accent)}
+.dsh-devops-tab[data-active="true"]::after{opacity:1}
+.dsh-devops-tab-count{font-size:var(--dv-font-xs);font-weight:600;opacity:.75}
 
 /* ---------- 表格 ---------- */
-.dsh-devops-table{width:100%;border-collapse:collapse;font-size:12px}
+.dsh-devops-table{width:100%;border-collapse:collapse;font-size:var(--dv-font-sm)}
 .dsh-devops-table th{
   text-align:left;font-weight:500;color:var(--dv-fg-3);padding:6px 8px;
   border-bottom:0.5px solid var(--dv-border-3);white-space:nowrap;
 }
 .dsh-devops-table td{padding:6px 8px;border-bottom:0.5px solid var(--dv-border-2);vertical-align:middle}
-.dsh-devops-table tr:hover td{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-devops-table tr:hover td{background:var(--dv-hover)}
 
 /* ---------- 编辑器三栏 ---------- */
-.dsh-devops-editor{flex:1;display:flex;min-height:0}
+.dsh-devops-editor{flex:1;display:flex;min-height:0;position:relative}
 .dsh-devops-palette{
   flex:none;width:190px;display:flex;flex-direction:column;min-height:0;
   border-right:0.5px solid var(--dv-border-3);overflow:hidden;
@@ -457,27 +613,196 @@ const CSS = `
   flex:none;width:288px;display:flex;flex-direction:column;min-height:0;
   border-left:0.5px solid var(--dv-border-3);overflow:hidden;
 }
-.dsh-devops-inspector-scroll{flex:1;overflow:auto;padding:10px}
-.dsh-devops-canvas{flex:1;min-width:0;overflow:auto;position:relative;padding:12px}
-.dsh-devops-lane{
-  border:0.5px solid var(--dv-border);border-radius:var(--dv-r-lg);margin-bottom:12px;
-  background:var(--dsw-alias-bg-layer-1,#0000);
+.dsh-devops-inspector-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px;min-width:0}
+/* ============ 编排画布：横向列布局（阶段 = 列，列内节点自上而下） ============ */
+/* 外层两轴可滚；.dsh-devops-board 以 flex 行承载所有列，阶段多时横向滚动而不挤压。 */
+.dsh-devops-canvas{flex:1;min-width:0;overflow:auto;position:relative;padding:10px 12px 14px}
+.dsh-devops-canvas-notice{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.dsh-devops-board{
+  position:relative;display:flex;flex-direction:row;align-items:flex-start;
+  gap:14px;min-height:100%;padding-bottom:6px;
+  /* 按内容撑开：列溢出后不被裁、依赖边层覆盖全部列、横向滚动能滚到末尾的新列。 */
+  width:max-content;min-width:100%;
 }
-.dsh-devops-lane[data-drop="true"]{border-color:var(--dsw-alias-state-business-primary)}
-.dsh-devops-lane-head{
-  display:flex;align-items:center;gap:8px;padding:6px 10px;
+.dsh-devops-board-empty{width:100%}
+.dsh-devops-edges{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:0}
+
+.dsh-devops-column{
+  position:relative;z-index:1;flex:0 0 auto;width:236px;display:flex;flex-direction:column;
+  border:0.5px solid var(--dv-border);border-radius:var(--dv-r-lg);
+  background:var(--dv-surface);
+  transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease;
+  animation:dsh-devops-rise .18s ease-out both;
+}
+.dsh-devops-column:hover{border-color:var(--dv-border-2)}
+.dsh-devops-column[data-active="true"]{border-color:var(--dv-border-2);box-shadow:0 1px 8px var(--dsw-alias-bg-mask-1,rgba(0,0,0,.08))}
+.dsh-devops-column[data-drop="true"]{
+  border-color:var(--dsw-alias-state-business-primary);
+  box-shadow:0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+.dsh-devops-column-head{
+  display:flex;align-items:center;gap:6px;padding:7px 9px 5px;
   border-bottom:0.5px solid var(--dv-border-2);
 }
-.dsh-devops-lane-title{font-size:12px;font-weight:500;color:var(--dv-fg)}
-.dsh-devops-lane-cards{display:flex;flex-wrap:wrap;gap:8px;padding:10px;min-height:52px;align-items:flex-start}
-.dsh-devops-nodecard{
-  position:relative;width:172px;border:0.5px solid var(--dv-border);border-radius:var(--dv-r-md);
-  background:var(--dsw-alias-bg-layer-2,#0000);padding:7px 9px;cursor:grab;user-select:none;
+.dsh-devops-column-index{
+  flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;font-size:11px;
+  background:var(--dv-surface-2);color:var(--dv-fg-2);
+  border:0.5px solid var(--dv-border);
 }
-.dsh-devops-nodecard[data-selected="true"]{border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 1px var(--dsw-alias-brand-primary)}
-.dsh-devops-nodecard[data-dragging="true"]{opacity:.5}
-.dsh-devops-nodecard-title{font-size:12px;font-weight:500;color:var(--dv-fg);margin-bottom:2px}
-.dsh-devops-nodecard-meta{font-size:10px;color:var(--dv-fg-3);display:flex;gap:6px;flex-wrap:wrap}
+.dsh-devops-column-title{font-size:12px;font-weight:500;color:var(--dv-fg);cursor:text}
+.dsh-devops-column-title:hover{color:var(--dsw-alias-link)}
+.dsh-devops-column-tools{
+  display:flex;align-items:center;gap:2px;flex-wrap:wrap;
+  padding:5px 7px;border-bottom:0.5px solid var(--dv-border-2);
+}
+.dsh-devops-headbtn{
+  display:inline-flex;align-items:center;gap:4px;min-height:20px;padding:1px 6px;
+  border-radius:var(--dv-r-sm);border:0.5px solid transparent;background:transparent;
+  color:var(--dv-fg-2);font-size:11px;cursor:pointer;
+  transition:background-color .14s ease,color .14s ease,border-color .14s ease,transform .12s ease;
+}
+.dsh-devops-headbtn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dv-fg)}
+.dsh-devops-headbtn:active:not(:disabled){transform:scale(.94)}
+.dsh-devops-headbtn[data-active="true"]{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}
+.dsh-devops-headbtn:disabled{opacity:.4;cursor:default}
+.dsh-devops-column-cards{
+  display:flex;flex-direction:column;gap:8px;padding:9px;min-height:140px;
+  transition:background-color .16s ease;
+}
+.dsh-devops-column[data-drop="true"] .dsh-devops-column-cards{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-devops-column-empty{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  border:1px dashed var(--dv-border-2);border-radius:var(--dv-r-md);
+  padding:14px 8px;color:var(--dv-fg-3);font-size:11px;text-align:center;
+}
+.dsh-devops-slot{position:relative}
+.dsh-devops-slot[data-drop-before="true"]::before{
+  content:"";position:absolute;left:0;right:0;top:-5px;height:2px;border-radius:2px;
+  background:var(--dsw-alias-state-business-primary);
+  animation:dsh-devops-drop-pulse .9s ease-in-out infinite;
+}
+
+/* ---------- 块状节点卡片 ---------- */
+.dsh-devops-nodecard{
+  display:flex;flex-direction:column;gap:5px;width:100%;padding:9px 10px;
+  border:0.5px solid var(--dv-border);border-radius:var(--dv-r-md);
+  background:var(--dv-surface-2);cursor:grab;user-select:none;
+  box-shadow:0 1px 2px var(--dsw-alias-bg-mask-1,rgba(0,0,0,.06));
+  transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease,background-color .15s ease;
+  animation:dsh-devops-card-in .18s ease-out both;
+}
+.dsh-devops-nodecard:hover{
+  border-color:var(--dv-border-2);transform:translateY(-1px);
+  box-shadow:0 4px 12px var(--dsw-alias-bg-mask-1,rgba(0,0,0,.14));
+}
+.dsh-devops-nodecard[data-selected="true"]{
+  border-color:var(--dsw-alias-brand-primary);
+  box-shadow:0 0 0 1px var(--dsw-alias-brand-primary),0 4px 12px var(--dsw-alias-bg-mask-1,rgba(0,0,0,.14));
+}
+.dsh-devops-nodecard[data-dragging="true"]{opacity:.45;transform:scale(.98)}
+/* 节点卡状态色：左侧 3px 色条 + 极淡色底；running 呼吸。 */
+.dsh-devops-nodecard[data-status="running"],.dsh-devops-nodecard[data-tone="busy"]{
+  border-left:3px solid var(--dv-busy);
+  background:color-mix(in srgb,var(--dv-busy) 8%,var(--dv-surface-2));
+  animation:dsh-devops-breathe 2s ease-in-out infinite;
+}
+.dsh-devops-nodecard[data-status="success"],.dsh-devops-nodecard[data-tone="ok"]{
+  border-left:3px solid var(--dv-ok);
+  background:color-mix(in srgb,var(--dv-ok) 7%,var(--dv-surface-2));
+}
+.dsh-devops-nodecard[data-status="failed"],.dsh-devops-nodecard[data-tone="error"]{
+  border-left:3px solid var(--dv-err);
+  background:color-mix(in srgb,var(--dv-err) 8%,var(--dv-surface-2));
+}
+.dsh-devops-nodecard[data-status="canceled"],.dsh-devops-nodecard[data-tone="warn"]{
+  border-left:3px solid var(--dv-warn);
+  background:color-mix(in srgb,var(--dv-warn) 7%,var(--dv-surface-2));
+}
+.dsh-devops-nodecard[data-status="pending"],.dsh-devops-nodecard[data-status="skipped"],
+.dsh-devops-nodecard[data-tone="idle"]{border-left:3px solid var(--dv-idle)}
+
+/* 列表行 / 状态点也吃同一套状态色，保证「颜色即状态」在列表里一致。 */
+.dsh-devops-list-row[data-status="failed"],.dsh-devops-list-row[data-tone="error"]{border-left:3px solid var(--dv-err)}
+.dsh-devops-list-row[data-status="running"],.dsh-devops-list-row[data-tone="busy"]{border-left:3px solid var(--dv-busy)}
+.dsh-devops-list-row[data-status="success"],.dsh-devops-list-row[data-tone="ok"]{border-left:3px solid var(--dv-ok)}
+.dsh-devops-list-row[data-status="canceled"],.dsh-devops-list-row[data-tone="warn"]{border-left:3px solid var(--dv-warn)}
+.dsh-devops-dot[data-tone="idle"],.dsh-devops-dot[data-tone="queued"]{background:var(--dv-idle)}
+/* 失败计数徽标：明显可辨 */
+.dsh-devops-chip[data-tone="error"]{font-weight:600}
+/* info 语义色（中性提示） */
+.dsh-devops-chip[data-tone="info"]{color:var(--dv-accent);background:color-mix(in srgb,var(--dv-accent) 14%,transparent)}
+.dsh-devops-banner[data-tone="info"]{
+  border-color:color-mix(in srgb,var(--dv-accent) 45%,transparent);
+  background:color-mix(in srgb,var(--dv-accent) 10%,transparent);color:var(--dv-accent);
+}
+@keyframes dsh-devops-breathe{
+  0%,100%{box-shadow:inset 3px 0 0 color-mix(in srgb,var(--dv-busy) 55%,transparent)}
+  50%{box-shadow:inset 3px 0 0 color-mix(in srgb,var(--dv-busy) 100%,transparent)}
+}
+.dsh-devops-nodecard:active{cursor:grabbing}
+.dsh-devops-nodecard-head{display:flex;align-items:center;gap:6px}
+.dsh-devops-nodecard-index{
+  flex:none;display:inline-flex;align-items:center;justify-content:center;
+  min-width:16px;height:16px;padding:0 3px;border-radius:var(--dv-r-sm);
+  background:var(--dv-surface-3);color:var(--dv-fg-3);font-size:10px;
+}
+.dsh-devops-nodecard-title{font-size:12px;font-weight:500;color:var(--dv-fg);flex:1}
+.dsh-devops-nodecard-flag{
+  flex:none;padding:0 5px;border-radius:999px;font-size:10px;
+  color:var(--dv-warn);background:color-mix(in srgb,var(--dv-warn) 16%,transparent);
+}
+.dsh-devops-nodecard-type{font-size:10px;color:var(--dv-fg-3)}
+.dsh-devops-nodecard-meta{
+  display:grid;grid-template-columns:auto 1fr;gap:1px 8px;
+  font-size:10px;color:var(--dv-fg-2);
+}
+.dsh-devops-nodecard-key{color:var(--dv-fg-3)}
+.dsh-devops-nodecard-needs{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:10px}
+.dsh-devops-nodecard-need{
+  padding:0 5px;border-radius:999px;font-size:10px;
+  background:color-mix(in srgb,var(--dv-accent) 14%,transparent);color:var(--dv-accent);
+}
+.dsh-devops-nodecard-foot{font-size:10px;color:var(--dv-fg-3)}
+
+/* ---------- 就地新增阶段 ---------- */
+.dsh-devops-addstage{
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  border:1px dashed var(--dv-border-2);border-radius:var(--dv-r-md);
+  background:transparent;color:var(--dv-fg-3);cursor:pointer;
+  font-size:11px;padding:4px 10px;white-space:nowrap;
+  transition:border-color .15s ease,color .15s ease,background-color .15s ease,transform .15s ease;
+}
+.dsh-devops-addstage:hover{
+  border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary);
+  background:var(--dsw-alias-interactive-bg-hover);transform:translateX(2px);
+}
+.dsh-devops-addstage:active{transform:scale(.96)}
+.dsh-devops-addstage[data-kind="head"]{padding:1px 6px;border-style:solid;border-color:transparent;min-height:20px;border-radius:var(--dv-r-sm)}
+.dsh-devops-addstage[data-kind="head"]:hover{transform:none}
+.dsh-devops-addstage[data-kind="gap"]{
+  align-self:stretch;flex-direction:column;width:28px;min-height:140px;padding:8px 0;
+  position:relative;z-index:1;
+}
+.dsh-devops-addstage[data-kind="gap"] .dsh-devops-addstage-label{writing-mode:vertical-rl;font-size:10px;letter-spacing:1px}
+.dsh-devops-addstage[data-kind="end"]{
+  align-self:flex-start;flex-direction:column;width:104px;min-height:140px;padding:10px 6px;
+  position:relative;z-index:1;
+}
+
+/* ---------- 画布动效：仅 CSS transition/animation，无第三方动画库 ---------- */
+@keyframes dsh-devops-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes dsh-devops-card-in{from{opacity:0;transform:translateY(-4px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes dsh-devops-drop-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+/* 尊重系统「减少动态效果」：关掉画布上的动画与过渡，只保留状态差异。 */
+@media (prefers-reduced-motion:reduce){
+  .dsh-devops-column,.dsh-devops-nodecard,.dsh-devops-slot[data-drop-before="true"]::before,
+  .dsh-devops-dot[data-tone="busy"]{animation:none}
+  .dsh-devops-column,.dsh-devops-nodecard,.dsh-devops-addstage,.dsh-devops-headbtn,
+  .dsh-devops-switch span,.dsh-devops-column-cards{transition:none}
+  .dsh-devops-nodecard:hover,.dsh-devops-addstage:hover,.dsh-devops-nodecard[data-dragging="true"]{transform:none}
+}
 .dsh-devops-palette-item{
   display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:var(--dv-r-sm);
   cursor:pointer;border:0.5px solid transparent;margin-bottom:2px;
@@ -489,35 +814,266 @@ const CSS = `
 .dsh-devops-progress{display:flex;align-items:center;gap:10px}
 .dsh-devops-stepcard{
   border:0.5px solid var(--dv-border);border-radius:var(--dv-r-md);margin-bottom:6px;
-  background:var(--dsw-alias-bg-layer-1,#0000);overflow:hidden;
+  background:var(--dv-surface);overflow:hidden;
+  transition:border-color var(--dv-t) var(--dv-ease),box-shadow var(--dv-t) var(--dv-ease);
 }
-.dsh-devops-stepcard[data-status="failed"]{border-color:var(--dsw-alias-state-error-primary)}
-.dsh-devops-stepcard[data-status="running"]{border-color:var(--dsw-alias-state-business-primary)}
+.dsh-devops-stepcard:hover{box-shadow:var(--dv-elev-1)}
+/* ---------- 状态色体系：颜色即状态（卡片/列头/列表点/徽标共用一套语义色） ----------
+   data-status 用运行/步骤的真实状态名；data-tone 复用既有语义色调（ok/error/busy/warn/idle）。
+   视觉语法：左侧 3px 色条 + 极淡色底，running 额外带呼吸动画。 */
+.dsh-devops-stepcard[data-status="failed"],.dsh-devops-stepcard[data-tone="error"]{
+  border-color:color-mix(in srgb,var(--dv-err) 45%,transparent);
+  border-left:3px solid var(--dv-err);
+  background:color-mix(in srgb,var(--dv-err) 7%,var(--dv-surface));
+}
+.dsh-devops-stepcard[data-status="running"],.dsh-devops-stepcard[data-tone="busy"]{
+  border-color:color-mix(in srgb,var(--dv-busy) 45%,transparent);
+  border-left:3px solid var(--dv-busy);
+  background:color-mix(in srgb,var(--dv-busy) 7%,var(--dv-surface));
+  animation:dsh-devops-breathe 2s ease-in-out infinite;
+}
+.dsh-devops-stepcard[data-status="success"],.dsh-devops-stepcard[data-tone="ok"]{
+  border-left:3px solid var(--dv-ok);
+  background:color-mix(in srgb,var(--dv-ok) 6%,var(--dv-surface));
+}
+.dsh-devops-stepcard[data-status="canceled"],.dsh-devops-stepcard[data-tone="warn"]{
+  border-left:3px solid var(--dv-warn);
+  background:color-mix(in srgb,var(--dv-warn) 6%,var(--dv-surface));
+}
+.dsh-devops-stepcard[data-status="pending"],.dsh-devops-stepcard[data-status="skipped"],
+.dsh-devops-stepcard[data-tone="idle"]{
+  border-left:3px solid var(--dv-idle);
+  background:var(--dv-surface);
+}
+
+/* 列头着色：一列的整体状态一眼可辨（顶部 2px 色条 + 淡色底）。 */
+.dsh-devops-column[data-status="running"] .dsh-devops-column-head,
+.dsh-devops-column[data-tone="busy"] .dsh-devops-column-head{
+  border-top:2px solid var(--dv-busy);
+  background:color-mix(in srgb,var(--dv-busy) 9%,transparent);
+}
+.dsh-devops-column[data-status="success"] .dsh-devops-column-head,
+.dsh-devops-column[data-tone="ok"] .dsh-devops-column-head{
+  border-top:2px solid var(--dv-ok);
+  background:color-mix(in srgb,var(--dv-ok) 9%,transparent);
+}
+.dsh-devops-column[data-status="failed"] .dsh-devops-column-head,
+.dsh-devops-column[data-tone="error"] .dsh-devops-column-head{
+  border-top:2px solid var(--dv-err);
+  background:color-mix(in srgb,var(--dv-err) 9%,transparent);
+}
+.dsh-devops-column[data-status="canceled"] .dsh-devops-column-head,
+.dsh-devops-column[data-tone="warn"] .dsh-devops-column-head{
+  border-top:2px solid var(--dv-warn);
+  background:color-mix(in srgb,var(--dv-warn) 9%,transparent);
+}
+/* 列本身也跟着状态走：边框染上状态色。 */
+.dsh-devops-column[data-status="failed"],.dsh-devops-column[data-tone="error"]{border-color:color-mix(in srgb,var(--dv-err) 40%,transparent)}
+.dsh-devops-column[data-status="running"],.dsh-devops-column[data-tone="busy"]{border-color:color-mix(in srgb,var(--dv-busy) 40%,transparent)}
+.dsh-devops-column[data-status="success"],.dsh-devops-column[data-tone="ok"]{border-color:color-mix(in srgb,var(--dv-ok) 40%,transparent)}
+.dsh-devops-column[data-status="canceled"],.dsh-devops-column[data-tone="warn"]{border-color:color-mix(in srgb,var(--dv-warn) 40%,transparent)}
 .dsh-devops-stepcard-head{
   display:flex;align-items:center;gap:8px;padding:6px 9px;cursor:pointer;
 }
-.dsh-devops-stepcard-head:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsh-devops-stepcard-title{font-size:12px;font-weight:500;color:var(--dv-fg)}
-.dsh-devops-stepcard-meta{font-size:11px;color:var(--dv-fg-3);display:flex;gap:8px;flex-wrap:wrap}
+.dsh-devops-stepcard-head:hover{background:var(--dv-hover)}
+.dsh-devops-stepcard-title{font-size:var(--dv-font-sm);font-weight:500;color:var(--dv-fg)}
+.dsh-devops-stepcard-meta{font-size:var(--dv-font-xs);color:var(--dv-fg-3);display:flex;gap:8px;flex-wrap:wrap}
 .dsh-devops-phases{display:flex;gap:3px;align-items:center}
 .dsh-devops-phase{
-  width:14px;height:4px;border-radius:2px;background:var(--dsw-alias-bg-layer-3,var(--dv-border));
+  width:14px;height:4px;border-radius:2px;background:var(--dv-surface-3);
 }
-.dsh-devops-phase[data-state="done"]{background:var(--dsw-alias-state-success-primary)}
-.dsh-devops-phase[data-state="active"]{background:var(--dsw-alias-state-business-primary)}
-.dsh-devops-phase[data-state="failed"]{background:var(--dsw-alias-state-error-primary)}
+.dsh-devops-phase[data-state="done"]{background:var(--dv-ok)}
+.dsh-devops-phase[data-state="active"]{background:var(--dv-busy)}
+.dsh-devops-phase[data-state="failed"]{background:var(--dv-err)}
 
-/* ---------- 日志面板 ---------- */
-.dsh-devops-logpanel{border-top:0.5px solid var(--dv-border-3);background:var(--dsw-alias-markdown-code-block,#0000)}
-.dsh-devops-logbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 8px;border-bottom:0.5px solid var(--dv-border-2)}
-.dsh-devops-logview{
-  height:230px;overflow:auto;padding:6px 8px;font-size:11.5px;line-height:17px;
-  font-family:var(--dsw-font-family-code,monospace);white-space:pre-wrap;word-break:break-all;
-  color:var(--dv-fg-2);
+/* ============ 日志 / 代码：深色终端（不随宿主浅色主题变白） ============ */
+/* 终端三层：panel（容器）> logbar（工具栏，略浅一档）> logview（滚动区，主底）。 */
+.dsh-devops-logpanel{
+  display:flex;flex-direction:column;min-height:0;
+  border:0.5px solid var(--dv-term-line);border-radius:var(--dv-r-md);
+  background:var(--dv-term-bg);color:var(--dv-term-fg);overflow:hidden;
 }
-.dsh-devops-logline[data-stream="stderr"]{color:var(--dsw-alias-state-error-primary)}
-.dsh-devops-logline mark{background:var(--dsw-alias-state-warn-tertiary,#ff0);color:inherit}
-.dsh-devops-log-gap{color:var(--dsw-alias-state-warn-primary);font-style:italic}
+.dsh-devops-logbar{
+  flex:none;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
+  background:var(--dv-term-bg-2);color:var(--dv-term-fg);
+  border-bottom:0.5px solid var(--dv-term-line);
+}
+/* 深色工具栏里的控件与徽标：提高对比度，避免"浅色控件配黑底"的割裂。 */
+.dsh-devops-logbar .dsh-devops-hint{color:var(--dv-term-dim)}
+.dsh-devops-logbar .dsh-devops-chip{background:color-mix(in srgb,var(--dv-term-fg) 12%,transparent);color:var(--dv-term-fg)}
+.dsh-devops-logbar .dsh-devops-chip[data-tone="ok"]{color:var(--dv-ok);background:color-mix(in srgb,var(--dv-ok) 20%,transparent)}
+.dsh-devops-logbar .dsh-devops-chip[data-tone="warn"]{color:var(--dv-warn);background:color-mix(in srgb,var(--dv-warn) 22%,transparent)}
+.dsh-devops-logbar .dsh-devops-chip[data-tone="error"]{color:var(--dv-term-stderr);background:color-mix(in srgb,var(--dv-term-stderr) 20%,transparent)}
+.dsh-devops-logbar .dsh-devops-btn{
+  color:var(--dv-term-fg);border-color:color-mix(in srgb,var(--dv-term-fg) 22%,transparent);
+}
+.dsh-devops-logbar .dsh-devops-btn:hover:not(:disabled){background:color-mix(in srgb,var(--dv-term-fg) 14%,transparent)}
+.dsh-devops-logbar .dsh-devops-btn[data-active="true"]{background:color-mix(in srgb,var(--dv-term-fg) 18%,transparent)}
+.dsh-devops-logbar .dsh-devops-input{
+  background:color-mix(in srgb,var(--dv-term-bg) 70%,white);color:var(--dv-term-fg);
+  border-color:var(--dv-term-line);
+}
+.dsh-devops-logbar .dsh-devops-input::placeholder{color:var(--dv-term-dim)}
+
+/* 语言选择器（终端工具栏）：复用深色终端配色。 */
+.dsh-devops-langselect{
+  min-height:24px;padding:2px 6px;border-radius:var(--dv-r-sm);
+  background:color-mix(in srgb,var(--dv-term-bg) 70%,white);color:var(--dv-term-fg);
+  border:0.5px solid var(--dv-term-line);font-family:var(--dv-term-font);font-size:var(--dv-font-xs);
+  outline:none;cursor:pointer;
+}
+.dsh-devops-langselect:focus{border-color:var(--dv-tok-function)}
+.dsh-devops-langselect option{background:var(--dv-term-bg);color:var(--dv-term-fg)}
+
+.dsh-devops-logview{
+  height:230px;overflow:auto;
+  padding:var(--dv-term-pad-y) var(--dv-term-pad-x);
+  background:var(--dv-term-bg);color:var(--dv-term-fg);
+  font-family:var(--dv-term-font);font-size:var(--dv-term-fs);line-height:var(--dv-term-lh);
+  white-space:pre-wrap;word-break:break-word;tab-size:2;
+  caret-color:var(--dv-term-fg);
+}
+.dsh-devops-logview::selection,.dsh-devops-logline::selection,.dsh-devops-tok::selection{
+  background:var(--dv-term-sel);color:inherit;
+}
+/* 静态日志行容器（与 logview 配套；深色底由 logview 提供）。 */
+.dsh-devops-loglines{display:flex;flex-direction:column;min-width:0}
+.dsh-devops-logline{
+  /* 行号与行内容以内联方式并排：无 :has()/flex 依赖，旧 WebView 也稳。
+     文本换行时悬挂缩进由 padding-left + text-indent 负值维持。 */
+  display:block;padding-left:0;
+  white-space:pre-wrap;word-break:break-word;tab-size:2;
+  font-family:inherit;font-size:inherit;line-height:inherit;color:inherit;
+}
+/* 行内容（与行号并排；保留缩进与换行）。 */
+.dsh-devops-logline-text{
+  white-space:pre-wrap;word-break:break-word;
+  font-family:inherit;font-size:inherit;line-height:inherit;color:inherit;
+}
+/* stderr 行：靠左侧红条 + 淡红底区分，**不覆盖 token 颜色**
+   （用后代选择器改 color 会以更高特异性吃掉语法着色，反而违背"按编码类型上色"）。 */
+.dsh-devops-logline[data-stream="stderr"]{
+  color:var(--dv-term-stderr);
+  border-left:2px solid var(--dv-term-stderr);
+  background:color-mix(in srgb,var(--dv-term-stderr) 8%,transparent);
+  padding-left:6px;
+}
+/* 行号槽。 */
+.dsh-devops-logline-no{
+  display:inline-block;min-width:2.6em;margin-right:10px;padding-right:8px;
+  text-align:right;color:var(--dv-term-dim);user-select:none;
+  border-right:0.5px solid var(--dv-term-line);
+  font-variant-numeric:tabular-nums;
+}
+/* 过滤命中：深底上可读的半透明黄，且不得覆盖 token 颜色。 */
+.dsh-devops-logview mark,.dsh-devops-logline mark{
+  background:var(--dv-term-mark);color:inherit;border-radius:2px;padding:0 1px;
+}
+.dsh-devops-log-gap{
+  margin:4px 0;padding:2px 8px;border-radius:var(--dv-r-sm);
+  background:var(--dv-term-bg-3);color:var(--dv-term-dim);
+  font-style:italic;font-size:var(--dv-font-xs);
+}
+
+/* ---------- 语法 token 调色板（syntax.js 的 kind；终端与代码框共用） ---------- */
+.dsh-devops-tok{color:inherit}
+.dsh-devops-tok-plain{color:var(--dv-tok-plain)}
+.dsh-devops-tok-keyword{color:var(--dv-tok-keyword);font-weight:600}
+.dsh-devops-tok-string{color:var(--dv-tok-string)}
+.dsh-devops-tok-comment{color:var(--dv-tok-comment);font-style:italic}
+.dsh-devops-tok-number{color:var(--dv-tok-number)}
+.dsh-devops-tok-function{color:var(--dv-tok-function);font-weight:500}
+.dsh-devops-tok-builtin{color:var(--dv-tok-builtin);font-weight:600}
+.dsh-devops-tok-operator{color:var(--dv-tok-operator)}
+.dsh-devops-tok-variable{color:var(--dv-tok-variable)}
+.dsh-devops-tok-type{color:var(--dv-tok-type);font-weight:500}
+/* 代码编辑器（浅色主题下也是深色终端）内同样是这套调色板。 */
+.dsh-devops-code-hl .dsh-devops-tok-plain{color:var(--dv-tok-plain)}
+
+/* ---------- 流水线详情：只读编排视图 + 右侧伸缩抽屉 ---------- */
+/* 只读边界：不拖拽、不改名、不增删；卡片用默认光标且不做位移反馈。 */
+.dsh-devops-detail{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;flex:1}
+/* 详情页复用编辑器三栏骨架（.dsh-devops-editor），此处只做只读修饰。 */
+.dsh-devops-detail-editor{flex:1}
+.dsh-devops-readonly .dsh-devops-nodecard{cursor:default}
+.dsh-devops-readonly .dsh-devops-nodecard:hover{transform:none;box-shadow:0 1px 2px var(--dsw-alias-bg-mask-1,rgba(0,0,0,.06))}
+.dsh-devops-readonly .dsh-devops-nodecard:active{cursor:default}
+.dsh-devops-readonly .dsh-devops-slot{cursor:default}
+.dsh-devops-readonly .dsh-devops-column{animation:none}
+
+.dsh-devops-drawer-layer{
+  position:absolute;inset:0;z-index:800;display:flex;justify-content:flex-end;
+}
+.dsh-devops-drawer-layer[data-open="false"]{
+  pointer-events:none;visibility:hidden;
+  transition:visibility 0s linear var(--dv-t-slow);
+}
+.dsh-devops-drawer-mask{
+  position:absolute;inset:0;background:var(--dv-mask);
+  backdrop-filter:var(--dv-blur);
+  opacity:0;transition:opacity var(--dv-t-slow) var(--dv-ease);
+}
+.dsh-devops-drawer-layer[data-open="true"] .dsh-devops-drawer-mask{opacity:1}
+/* 低一档的模糊变体（默认已带轻微模糊，这里允许显式指定）。 */
+.dsh-devops-drawer-mask[data-blur="true"]{backdrop-filter:var(--dv-blur)}
+
+.dsh-devops-drawer{
+  position:relative;z-index:1;display:flex;flex-direction:column;min-height:0;
+  width:min(420px,100%);height:100%;
+  border-left:0.5px solid var(--dv-border-2);
+  background:var(--dv-surface);color:var(--dv-fg);
+  box-shadow:var(--dv-elev-2);
+  transform:translateX(100%);
+  transition:transform var(--dv-t-slow) var(--dv-ease);
+}
+.dsh-devops-drawer-layer[data-open="true"] .dsh-devops-drawer{transform:none}
+
+/* ── 圆角悬浮卡片形态：脱离右边缘、四周留白、高度自适应且受视口约束 ── */
+.dsh-devops-drawer-layer[data-shape="floating"]{
+  padding:16px;align-items:flex-start;
+}
+.dsh-devops-drawer-layer[data-shape="floating"][data-open="false"]{
+  padding:16px;
+}
+.dsh-devops-drawer[data-variant="floating"]{
+  height:auto;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);
+  margin-left:auto;
+  border:0.5px solid var(--dv-border-2);border-left-width:0.5px;
+  border-radius:var(--dv-r-xl);
+  box-shadow:var(--dv-elev-2),0 2px 6px rgba(0,0,0,.16);
+  transform:translateX(calc(100% + 24px));
+}
+.dsh-devops-drawer-layer[data-open="true"] .dsh-devops-drawer[data-variant="floating"]{transform:none}
+/* 悬浮卡片的头部圆角跟随卡片，避免直角戳出圆角。 */
+.dsh-devops-drawer[data-variant="floating"] .dsh-devops-drawer-head{
+  border-radius:var(--dv-r-xl) var(--dv-r-xl) 0 0;
+}
+.dsh-devops-drawer[data-variant="floating"] .dsh-devops-drawer-body{
+  flex:1;min-height:0;overflow:auto;
+}
+
+.dsh-devops-drawer-head{
+  flex:none;display:flex;align-items:center;gap:8px;
+  padding:10px 12px;border-bottom:0.5px solid var(--dv-border-2);
+}
+.dsh-devops-drawer-title{font-size:var(--dv-font);font-weight:600;color:var(--dv-fg);min-width:0}
+.dsh-devops-drawer-body{
+  flex:1;min-height:0;overflow:auto;padding:12px;
+}
+.dsh-devops-drawer-body [hidden]{display:none}
+.dsh-devops-drawer-panel{display:flex;flex-direction:column;gap:8px;min-width:0}
+/* 原始值小面板：与终端/语法调色板呼应（等宽、深底、浅字）。 */
+.dsh-devops-drawer-raw{
+  flex:1;min-width:0;padding:6px 9px;border-radius:var(--dv-r-sm);
+  background:var(--dv-term-bg);border:0.5px solid var(--dv-term-line);
+  color:var(--dv-term-fg);font-size:var(--dv-font-xs);
+  font-family:var(--dv-term-font);
+  word-break:break-all;white-space:pre-wrap;
+}
+@media (max-width:900px){
+  .dsh-devops-drawer,.dsh-devops-drawer[data-variant="floating"]{width:100%}
+  .dsh-devops-drawer-layer[data-shape="floating"]{padding:8px}
+}
 
 /* ---------- 全局状态栏（shell.overlay） ---------- */
 /* 非整页场景（状态栏等）复用时，去掉整页工作台专属的尺寸/背景。 */
@@ -537,57 +1093,211 @@ const CSS = `
 }
 .dsh-devops-overlay-bar{
   pointer-events:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  padding:5px 11px;border-radius:999px;
+  padding:5px 11px;border-radius:var(--dv-r-pill);
   border:0.5px solid var(--dv-border-2);
-  background:var(--dsw-alias-toast-bg,var(--dsw-alias-bg-layer-3,#1c1c1e));
-  color:var(--dsw-alias-toast-label,var(--dv-fg));
-  box-shadow:0 4px 16px rgba(0,0,0,.18);
-  font-size:12px;
+  background:var(--dv-toast-bg);
+  color:var(--dv-toast-fg);
+  box-shadow:var(--dv-elev-1);
+  font-size:var(--dv-font-sm);
+  transition:background-color var(--dv-t) var(--dv-ease),box-shadow var(--dv-t) var(--dv-ease);
 }
 .dsh-devops-overlay-bar[data-clickable="true"]{cursor:pointer}
-.dsh-devops-overlay-bar[data-clickable="true"]:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-devops-overlay-bar[data-clickable="true"]:hover{background:var(--dv-hover)}
 .dsh-devops-overlay-seg{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .dsh-devops-overlay-seg+.dsh-devops-overlay-seg{padding-left:10px;border-left:0.5px solid var(--dv-border-2)}
-.dsh-devops-overlay-mono{font-variant-numeric:tabular-nums;font-family:var(--dsw-font-family-code,monospace)}
+.dsh-devops-overlay-mono{font-variant-numeric:tabular-nums;font-family:var(--dv-code-font)}
 
 /* ---------- 弹层 ---------- */
 .dsh-devops-modal-backdrop{
-  position:fixed;inset:0;z-index:1000;background:var(--dsw-alias-bg-mask-1,rgba(0,0,0,.35));
+  position:fixed;inset:0;z-index:1000;background:var(--dv-mask);
+  backdrop-filter:var(--dv-blur);
   display:flex;align-items:center;justify-content:center;padding:24px;
+  animation:dsh-devops-fade var(--dv-t-slow) var(--dv-ease) both;
 }
 .dsh-devops-modal{
   width:min(560px,100%);max-height:86vh;display:flex;flex-direction:column;
   border-radius:var(--dv-r-xl);border:0.5px solid var(--dv-border-2);
-  background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-bg-base));color:var(--dv-fg);
-  box-shadow:0 12px 40px rgba(0,0,0,.28);
+  background:var(--dv-surface);color:var(--dv-fg);
+  box-shadow:var(--dv-elev-2);
+  animation:dsh-devops-pop var(--dv-t-slow) var(--dv-ease) both;
 }
 .dsh-devops-modal[data-wide="true"]{width:min(880px,100%)}
 .dsh-devops-modal-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:0.5px solid var(--dv-border-2)}
 .dsh-devops-modal-body{padding:14px;overflow:auto}
 .dsh-devops-modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:0.5px solid var(--dv-border-2)}
+@keyframes dsh-devops-fade{from{opacity:0}to{opacity:1}}
+@keyframes dsh-devops-pop{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
 
 /* ---------- 浏览器 / 下拉候选 ---------- */
 .dsh-devops-dropdown{
   position:absolute;z-index:1200;margin-top:2px;max-height:216px;overflow:auto;width:100%;
   border:0.5px solid var(--dv-border-2);border-radius:var(--dv-r-md);
-  background:var(--dsw-alias-bg-layer-1,var(--dsw-alias-bg-base));
-  box-shadow:0 8px 24px rgba(0,0,0,.2);
+  background:var(--dv-surface);
+  box-shadow:var(--dv-elev-1);
 }
-.dsh-devops-dropdown-row{display:flex;align-items:center;gap:6px;padding:4px 8px;cursor:pointer;font-size:12px}
-.dsh-devops-dropdown-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsh-devops-dropdown-note{padding:4px 8px;font-size:11px;color:var(--dv-fg-3)}
+.dsh-devops-dropdown-row{display:flex;align-items:center;gap:6px;padding:4px 8px;cursor:pointer;font-size:var(--dv-font-sm)}
+.dsh-devops-dropdown-row:hover{background:var(--dv-hover)}
+.dsh-devops-dropdown-note{padding:4px 8px;font-size:var(--dv-font-xs);color:var(--dv-fg-3)}
 .dsh-devops-upload-preview{
   max-height:190px;overflow:auto;border:0.5px solid var(--dv-border-2);border-radius:var(--dv-r-md);
-  padding:6px 8px;font-size:11.5px;font-family:var(--dsw-font-family-code,monospace);
-  background:var(--dsw-alias-bg-layer-2,#0000);color:var(--dv-fg-2);
+  padding:6px 8px;font-size:11.5px;font-family:var(--dv-code-font);
+  background:var(--dv-surface-2);color:var(--dv-fg-2);
 }
 .dsh-devops-banner{
-  border-radius:var(--dv-r-md);padding:8px 10px;margin-bottom:10px;font-size:12px;
-  border:0.5px solid var(--dv-border-2);background:var(--dsw-alias-bg-layer-2,#0000);color:var(--dv-fg-2);
+  border-radius:var(--dv-r-md);padding:8px 10px;margin-bottom:10px;font-size:var(--dv-font-sm);
+  border:0.5px solid var(--dv-border-2);background:var(--dv-surface-2);color:var(--dv-fg-2);
 }
-.dsh-devops-banner[data-tone="error"]{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}
-.dsh-devops-banner[data-tone="warn"]{border-color:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-state-warn-primary)}
-.dsh-devops-banner[data-tone="ok"]{border-color:var(--dsw-alias-state-success-primary);color:var(--dsw-alias-state-success-primary)}
+.dsh-devops-banner[data-tone="error"]{border-color:color-mix(in srgb,var(--dv-err-soft) 45%,transparent);background:color-mix(in srgb,var(--dv-err-soft) 10%,transparent);color:var(--dv-err-soft)}
+.dsh-devops-banner[data-tone="warn"]{border-color:color-mix(in srgb,var(--dv-warn) 45%,transparent);background:color-mix(in srgb,var(--dv-warn) 10%,transparent);color:var(--dv-warn)}
+.dsh-devops-banner[data-tone="ok"]{border-color:color-mix(in srgb,var(--dv-ok) 45%,transparent);background:color-mix(in srgb,var(--dv-ok) 10%,transparent);color:var(--dv-ok)}
+
+
+/* ---------- 检查器：可拖拽调宽 + 可收起（用户抱怨「拉也不能拉宽」） ---------- */
+/* 宽度由外层 host 用内联 style 控制，这里只保证它能伸缩、且内部可滚。 */
+.dsh-devops-inspector-host{
+  flex:none;display:flex;min-height:0;min-width:0;
+}
+.dsh-devops-inspector-host>.dsh-devops-inspector{width:100%;border-left:none}
+/* 拖拽手柄：窄条 + 中间可见的抓握提示；双击可在默认/最大化间切换。 */
+.dsh-devops-inspector-resizer{
+  flex:none;width:6px;cursor:col-resize;position:relative;
+  background:transparent;transition:background var(--dv-t) var(--dv-ease);
+}
+.dsh-devops-inspector-resizer::after{
+  content:'';position:absolute;top:0;bottom:0;left:2px;width:2px;border-radius:2px;
+  background:var(--dv-border-2);transition:background var(--dv-t) var(--dv-ease);
+}
+.dsh-devops-inspector-resizer:hover::after,
+.dsh-devops-inspector-resizer:active::after{background:var(--dv-accent)}
+.dsh-devops-inspector-resizer[data-open="false"]{display:none}
+/* 收起后的窄轨：只留一个展开按钮，把画布空间还给用户。 */
+.dsh-devops-inspector-rail{
+  flex:none;display:flex;align-items:flex-start;justify-content:center;
+  width:28px;padding-top:8px;border-left:0.5px solid var(--dv-border-3);
+}
+.dsh-devops-inspector-head{
+  flex:none;display:flex;align-items:center;gap:6px;
+  padding:8px 10px;border-bottom:0.5px solid var(--dv-border-3);min-width:0;
+}
+.dsh-devops-inspector-head-title{font-size:var(--dv-font);font-weight:600;color:var(--dv-fg);min-width:0}
+
+/* ---------- 代码编辑器：工具条 + 自动增高 + 放大编辑浮层 ---------- */
+.dsh-devops-code-block{display:flex;flex-direction:column;gap:6px;min-width:0}
+.dsh-devops-code-toolbar{display:flex;align-items:center;gap:8px;min-width:0}
+.dsh-devops-code-lang{
+  font-size:var(--dv-font-xs);font-weight:600;letter-spacing:.02em;
+  color:var(--dv-tok-function);text-transform:none;
+}
+/* 面板窄时工具条仍要放得下：允许换行而不是把按钮挤没。 */
+.dsh-devops-code-toolbar{flex-wrap:wrap}
+.dsh-devops-code-expand{flex:none}
+/* 自动增高：高度由 rows 属性驱动（CodeSurface 按内容算），这里只给出滚动边界。 */
+.dsh-devops-code[data-fill="true"]{flex:1;min-height:0}
+.dsh-devops-code[data-fill="true"] .dsh-devops-code-area{min-height:0;height:100%;resize:none}
+.dsh-devops-code[data-fill="true"] .dsh-devops-code-hl{overflow:auto}
+
+.dsh-devops-code-full-backdrop{
+  position:fixed;inset:0;z-index:1400;display:flex;
+  padding:calc(var(--dsh-frame-top-clearance,0px) + 24px) 24px 24px;
+  background:var(--dv-mask);backdrop-filter:var(--dv-blur);
+  animation:dsh-devops-fade var(--dv-t) var(--dv-ease);
+}
+.dsh-devops-code-full{
+  flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;
+  border:0.5px solid var(--dv-border-2);border-radius:var(--dv-r-xl);
+  background:var(--dv-surface);box-shadow:var(--dv-elev-2);
+  overflow:hidden;animation:dsh-devops-pop var(--dv-t) var(--dv-ease);
+}
+.dsh-devops-code-full-head{
+  flex:none;display:flex;align-items:center;gap:8px;min-width:0;
+  padding:10px 12px;border-bottom:0.5px solid var(--dv-border-3);
+}
+.dsh-devops-code-full-title{font-size:var(--dv-font);font-weight:600;color:var(--dv-fg);min-width:0}
+/* 浮层里的编辑器撑满剩余空间，长脚本可以一次看很多行。 */
+.dsh-devops-code-full .dsh-devops-code{
+  flex:1;min-height:0;margin:12px;border-radius:var(--dv-r-md);
+}
+@keyframes dsh-devops-fade{from{opacity:0}to{opacity:1}}
+@keyframes dsh-devops-pop{from{opacity:0;transform:translateY(6px) scale(.995)}to{opacity:1;transform:none}}
+
+/* ---------- 节点编辑浮层：覆盖画布，而不是占一栏 ----------
+   用户要求：「点击节点之后虚化背景……去点击编辑层之外的地方，编辑窗口会自动保存收起来」。
+   与详情页的只读抽屉同一套视觉语言（圆角 + elevation + 遮罩虚化），但这里**可编辑**。 */
+.dsh-devops-editor-sheet-layer{
+  position:absolute;inset:0;z-index:900;display:flex;justify-content:flex-end;
+  padding:16px;pointer-events:auto;
+}
+.dsh-devops-editor-sheet-layer[data-open="false"]{pointer-events:none;visibility:hidden}
+/* 遮罩：半透明 + 轻微模糊（虚化背景）；点它就是「点编辑层之外」 */
+.dsh-devops-editor-sheet-mask{
+  position:absolute;inset:0;background:var(--dv-mask);
+  backdrop-filter:var(--dv-blur);
+  animation:dsh-devops-fade var(--dv-t) var(--dv-ease) both;
+}
+/* 浮层卡片：贴右侧但四周留白、脱离边缘，圆角 + 阴影 + 细边框，高度受视口约束。 */
+.dsh-devops-editor-sheet{
+  position:relative;z-index:1;display:flex;flex-direction:column;min-height:0;
+  margin-left:auto;height:auto;max-height:calc(100vh - 32px);
+  max-width:calc(100vw - 32px);
+  border:0.5px solid var(--dv-border-2);border-radius:var(--dv-r-xl);
+  background:var(--dv-surface);color:var(--dv-fg);
+  box-shadow:var(--dv-elev-2),0 2px 8px var(--dsw-alias-bg-mask-1,rgba(0,0,0,.18));
+  overflow:hidden;
+  animation:dsh-devops-pop var(--dv-t-slow) var(--dv-ease) both;
+}
+.dsh-devops-editor-sheet-head{
+  flex:none;display:flex;align-items:center;gap:8px;min-width:0;
+  padding:10px 12px;border-bottom:0.5px solid var(--dv-border-2);
+}
+.dsh-devops-editor-sheet-title{font-size:var(--dv-font);font-weight:600;color:var(--dv-fg);min-width:0}
+.dsh-devops-editor-sheet-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+/* 浮层内嵌 Inspector：去掉侧栏的固定宽度与左边框，撑满卡片。 */
+.dsh-devops-editor-sheet-body>.dsh-devops-inspector{width:100%;border-left:none;min-height:0}
+.dsh-devops-editor-sheet-foot{
+  flex:none;display:flex;align-items:center;gap:8px;
+  padding:8px 12px;border-top:0.5px solid var(--dv-border-2);
+  background:var(--dv-surface-2);
+}
+/* 左边缘拖拽手柄（附加能力：不拖也能用，默认宽度已舒适）。 */
+.dsh-devops-editor-sheet-resizer{
+  position:absolute;left:0;top:10px;bottom:10px;width:8px;
+  cursor:col-resize;border-radius:var(--dv-r-sm);
+  transition:background var(--dv-t) var(--dv-ease);
+}
+.dsh-devops-editor-sheet-resizer:hover{background:color-mix(in srgb,var(--dv-accent) 35%,transparent)}
+
+/* 窄屏：浮层铺满可用宽度，仍保留四周留白与圆角。 */
+@media (max-width:900px){
+  .dsh-devops-editor-sheet-layer{padding:8px}
+  .dsh-devops-editor-sheet{width:100% !important;max-height:calc(100vh - 16px)}
+}
+
+/* ---------- 滚动分区（task-11）：区域自身滚到底，不把滚动传给外层 ----------
+   用户原话：「在节点窗口滑动应该只翻动节点那一个窗口」。
+   overscroll-behavior:contain 就是这条诉求的正解。 */
+.dsh-devops-canvas,
+.dsh-devops-palette-scroll,
+.dsh-devops-inspector-scroll,
+.dsh-devops-logview,
+.dsh-devops-detail-scroll,
+.dsh-devops-drawer-body,
+.dsh-devops-editor-sheet-body{overscroll-behavior:contain}
+/* 详情页/运行详情的内部滚动区（页面自己管滚动，而不是整页动）。 */
+.dsh-devops-detail-scroll{flex:1;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden}
+
+/* 全局动效收敛：统一时长/缓动，并尊重系统「减少动态效果」。 */
+@media (prefers-reduced-motion:reduce){
+  .dsh-devops-btn,.dsh-devops-input,.dsh-devops-select,.dsh-devops-textarea,.dsh-devops-switch,
+  .dsh-devops-switch span,.dsh-devops-card,.dsh-devops-empty,.dsh-devops-list-row,.dsh-devops-nav-item,
+  .dsh-devops-tab,.dsh-devops-tab::after,.dsh-devops-chip,.dsh-devops-overlay-bar,.dsh-devops-stepcard,
+  .dsh-devops-modal,.dsh-devops-modal-backdrop,.dsh-devops-drawer,.dsh-devops-drawer-mask,
+  .dsh-devops-code-full,.dsh-devops-code-full-backdrop,.dsh-devops-inspector-resizer,
+  .dsh-devops-drawer-layer[data-open="false"]{transition:none;animation:none}
+  /* 状态卡的呼吸动画同样关闭，仅保留左侧色条与淡色底（静态可辨）。 */
+  .dsh-devops-nodecard,.dsh-devops-column,.dsh-devops-column-cards,.dsh-devops-stepcard,
+  .dsh-devops-nodecard[data-status],.dsh-devops-stepcard[data-status],
+  .dsh-devops-nodecard[data-tone],.dsh-devops-stepcard[data-tone]{transition:none;animation:none}
+}
 
 @media (max-width:900px){
   .dsh-devops-palette{display:none}
@@ -1426,6 +2136,244 @@ exports.useToast = useToast;
 exports.AsyncBox = AsyncBox;
 });
 
+__def("./syntax.js", function (module, exports, require) {
+/**
+ * src/client/syntax.js —— 轻量语法着色引擎（零依赖、纯函数、可单测）。
+ *
+ * 设计约束：
+ *  - 不依赖 DOM / React / h.js，纯字符串 -> token 数组，便于 Node 里直接单测；
+ *  - 线性扫描（不是正则回溯），对长日志与超大脚本都能保持稳定；
+ *  - 只产出语义 kind，**颜色由 CSS 决定**（.dsh-devops-tok-<kind>），
+ *    这样深浅色主题、终端配色都能只改样式表。
+ */
+
+/** token 语义类别（CSS 类名后缀同值）。 */
+const KINDS = [
+  'plain', 'keyword', 'string', 'comment', 'number',
+  'function', 'operator', 'builtin', 'variable', 'type',
+];
+
+const KIND = {};
+for (const k of KINDS) KIND[k] = k;
+
+/** 支持的语言（别名在 normalizeLanguage 里归一）。 */
+const LANGUAGES = ['shell', 'python', 'javascript', 'json', 'yaml'];
+
+const KEYWORDS = {
+  shell: new Set(['if','then','else','elif','fi','for','while','until','do','done','case','esac','in','function','return','break','continue','local','readonly','declare','export','unset','set','shift','trap','source','alias','eval','exec','exit','test','true','false'].map((s) => s)),
+  python: new Set(['and','as','assert','async','await','break','class','continue','def','del','elif','else','except','finally','for','from','global','if','import','in','is','lambda','nonlocal','not','or','pass','raise','return','try','while','with','yield','True','False','None']),
+  javascript: new Set(['async','await','break','case','catch','class','const','continue','default','delete','do','else','export','extends','finally','for','function','if','import','in','instanceof','let','new','of','return','static','super','switch','this','throw','try','typeof','var','void','while','yield','true','false','null','undefined']),
+  json: new Set(['true','false','null']),
+  yaml: new Set(['true','false','null','yes','no','on','off']),
+};
+
+const BUILTINS = {
+  shell: new Set(['echo','cd','pwd','printf','read','mkdir','rmdir','rm','cp','mv','ln','ls','cat','head','tail','grep','sed','awk','sort','uniq','wc','cut','tr','find','xargs','tar','gzip','zip','unzip','curl','wget','git','npm','npx','pnpm','yarn','node','python','python3','pip','pip3','docker','docker-compose','kubectl','helm','make','cmake','ssh','scp','rsync','systemctl','service','chmod','chown','sudo','apt','apt-get','yum','dnf','apk','brew','date','sleep','kill','ps','df','du','env']),
+  python: new Set(['print','len','range','enumerate','zip','map','filter','sum','min','max','abs','round','sorted','reversed','open','isinstance','issubclass','getattr','setattr','hasattr','super','type','repr','format','input','iter','next','any','all','Exception','ValueError','TypeError','KeyError','RuntimeError','self','cls']),
+  javascript: new Set(['console','require','module','exports','process','globalThis','JSON','Object','Array','Promise','Map','Set','WeakMap','Math','Date','RegExp','Error','String','Number','Boolean','Symbol','BigInt','parseInt','parseFloat','isNaN','setTimeout','setInterval','clearTimeout','document','window','fetch','URL','Blob','File']),
+  json: new Set([]),
+  yaml: new Set([]),
+};
+
+/** 语言别名归一。 */
+function normalizeLanguage(language) {
+  const raw = String(language || '').trim().toLowerCase();
+  if (!raw) return 'shell';
+  if (raw === 'js' || raw === 'jsx' || raw === 'ts' || raw === 'tsx' || raw === 'node' || raw === 'javascript') return 'javascript';
+  if (raw === 'py' || raw === 'python' || raw === 'python3') return 'python';
+  if (raw === 'sh' || raw === 'bash' || raw === 'zsh' || raw === 'shell' || raw === 'console' || raw === 'log') return 'shell';
+  if (raw === 'yml' || raw === 'yaml') return 'yaml';
+  if (raw === 'json') return 'json';
+  return 'shell';
+}
+
+const IDENT_START = /[A-Za-z_$]/;
+const IDENT = /[A-Za-z0-9_$]/;
+const OPERATOR = /[+\-*/%=<>!&|^~?:;,.(){}\[\]]/;
+const WORD_BREAK = /[+\-*/%=<>!&|^~?:;,.(){}\[\]'"$#\n]/;
+
+function isDigit(c) { return c >= '0' && c <= '9'; }
+
+/**
+ * 把源码切成 token 数组。
+ * @param {string} code
+ * @param {string} language
+ * @returns {Array<{text:string, kind:string}>} 换行作为单独的 plain token 保留
+ */
+function tokenize(code, language) {
+  const lang = normalizeLanguage(language);
+  const text = code === null || code === undefined ? '' : String(code);
+  const out = [];
+  const n = text.length;
+  let i = 0;
+  const push = (t, kind) => { if (t !== '') out.push({ text: t, kind: kind || KIND.plain }); };
+  const hashComment = lang === 'python' || lang === 'shell' || lang === 'yaml';
+  const slashComment = lang === 'javascript';
+  const blockComment = lang === 'javascript';
+
+  while (i < n) {
+    const ch = text[i];
+
+    if (ch === '\n') { push('\n', KIND.plain); i += 1; continue; }
+
+    // 字符串优先于注释：'#' 或 '//' 出现在字符串里时按字符串处理
+    if (ch === '"' || ch === "'" || (lang === 'javascript' && ch === '`')) {
+      const triple = (lang === 'python') && text.slice(i, i + 3) === ch + ch + ch;
+      if (triple) {
+        let j = i + 3;
+        while (j < n && text.slice(j, j + 3) !== ch + ch + ch) j += 1;
+        j = Math.min(n, j + 3);
+        push(text.slice(i, j), KIND.string);
+        i = j; continue;
+      }
+      let j = i + 1;
+      while (j < n && text[j] !== ch && text[j] !== '\n') {
+        if (text[j] === '\\') j += 1;
+        j += 1;
+      }
+      j = Math.min(n, j + 1);
+      const literal = text.slice(i, j);
+      // Shell 的双引号里 $VAR 仍会展开：把变量单独切出来着色，
+      // 否则 "hi $NAME" 里的 $NAME 会被整段当字符串，配色失真。
+      if (lang === 'shell' && ch === '"' && literal.indexOf('$') > 0) {
+        let cursor = 0;
+        const varRe = /\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$[0-9@*#?$!-]/g;
+        let vm = varRe.exec(literal);
+        while (vm) {
+          if (vm.index > cursor) push(literal.slice(cursor, vm.index), KIND.string);
+          push(vm[0], KIND.variable);
+          cursor = vm.index + vm[0].length;
+          vm = varRe.exec(literal);
+        }
+        if (cursor < literal.length) push(literal.slice(cursor), KIND.string);
+      } else {
+        push(literal, KIND.string);
+      }
+      i = j; continue;
+    }
+
+    if (hashComment && ch === '#') {
+      let j = i;
+      while (j < n && text[j] !== '\n') j += 1;
+      push(text.slice(i, j), KIND.comment);
+      i = j; continue;
+    }
+
+    if (slashComment && ch === '/' && text[i + 1] === '/') {
+      let j = i;
+      while (j < n && text[j] !== '\n') j += 1;
+      push(text.slice(i, j), KIND.comment);
+      i = j; continue;
+    }
+
+    if (blockComment && ch === '/' && text[i + 1] === '*') {
+      let j = i + 2;
+      while (j < n && !(text[j] === '*' && text[j + 1] === '/')) j += 1;
+      j = Math.min(n, j + 2);
+      push(text.slice(i, j), KIND.comment);
+      i = j; continue;
+    }
+
+    if (isDigit(ch) || (ch === '.' && isDigit(text[i + 1]))) {
+      let j = i;
+      while (j < n && /[0-9a-fA-FxXoObB._]/.test(text[j])) j += 1;
+      push(text.slice(i, j), KIND.number);
+      i = j; continue;
+    }
+
+    if (lang === 'shell' && ch === '$') {
+      let j = i + 1;
+      if (text[j] === '{') {
+        while (j < n && text[j] !== '}') j += 1;
+        j = Math.min(n, j + 1);
+      } else {
+        while (j < n && /[A-Za-z0-9_]/.test(text[j])) j += 1;
+      }
+      push(text.slice(i, j), KIND.variable);
+      i = j; continue;
+    }
+
+    if (IDENT_START.test(ch)) {
+      let j = i;
+      while (j < n && IDENT.test(text[j])) j += 1;
+      const word = text.slice(i, j);
+      let k = j;
+      while (k < n && (text[k] === ' ' || text[k] === '\t')) k += 1;
+      let kind = KIND.plain;
+      if (KEYWORDS[lang] && KEYWORDS[lang].has(word)) kind = KIND.keyword;
+      else if (BUILTINS[lang] && BUILTINS[lang].has(word)) kind = KIND.builtin;
+      else if (text[k] === '(') kind = KIND.function;
+      else if ((lang === 'python' || lang === 'javascript') && /^[A-Z][A-Za-z0-9_]*$/.test(word)) kind = KIND.type;
+      push(word, kind);
+      i = j; continue;
+    }
+
+    if (OPERATOR.test(ch)) {
+      let j = i + 1;
+      while (j < n && /[+\-*/%=<>!&|^~?:]/.test(text[j])) j += 1;
+      push(text.slice(i, j), KIND.operator);
+      i = j; continue;
+    }
+
+    let j = i;
+    while (j < n && !IDENT_START.test(text[j]) && !isDigit(text[j]) && !WORD_BREAK.test(text[j]) && text[j] !== '$' && text[j] !== '\n') j += 1;
+    if (j === i) j = i + 1;
+    push(text.slice(i, j), KIND.plain);
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * 按行切分 token（代码编辑器/日志都是行式渲染）。
+ * @returns {Array<Array<{text:string, kind:string}>>} 每行的 token 列表（行内不含 '\n'）
+ */
+function tokenizeLines(code, language) {
+  const tokens = tokenize(code, language);
+  const lines = [[]];
+  for (const token of tokens) {
+    const parts = String(token.text).split('\n');
+    for (let p = 0; p < parts.length; p += 1) {
+      if (p > 0) lines.push([]);
+      if (parts[p] !== '') lines[lines.length - 1].push({ text: parts[p], kind: token.kind });
+    }
+  }
+  return lines;
+}
+
+/** 单行着色（日志逐行调用；行内不补语的状态由调用方决定是否整段 tokenize）。 */
+function tokenizeLine(line, language) {
+  const parts = tokenize(String(line === null || line === undefined ? '' : line), language);
+  return parts.filter((t) => t.text !== '\n');
+}
+
+/**
+ * 猜测语言：shebang > python/js 特征 > json 形状 > 默认 shell。
+ * 仅供日志面板的「自动」模式使用，猜错不影响可读性（可手动切换）。
+ */
+function detectLanguage(code) {
+  const text = String(code || '');
+  const first = (text.split('\n')[0] || '').trim();
+  if (/^#!.*\bpython/.test(first)) return 'python';
+  if (/^#!\//.test(first)) return 'shell';
+  if (/(^|\n)\s*(def\s+\w+\s*\(|class\s+\w+|@\w+|from\s+[\w.]+\s+import\b)/.test(text)) return 'python';
+  if (/\bprint\(|\bself\b|\bNone\b/.test(text)) return 'python';
+  if (/(^|\n)\s*(const|let|var|function|import|export|async)\s|=>|\bconsole\.log\(/.test(text)) return 'javascript';
+  const trimmed = text.trim();
+  if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && /"\s*:/.test(text)) return 'json';
+  return 'shell';
+}
+
+exports.KINDS = KINDS;
+exports.KIND = KIND;
+exports.LANGUAGES = LANGUAGES;
+exports.normalizeLanguage = normalizeLanguage;
+exports.tokenize = tokenize;
+exports.tokenizeLines = tokenizeLines;
+exports.tokenizeLine = tokenizeLine;
+exports.detectLanguage = detectLanguage;
+});
+
 __def("./fields.js", function (module, exports, require) {
 /**
  * 类型化控件库：严格按契约 §4「字段类型 → 控件映射」实现。
@@ -1435,11 +2383,13 @@ __def("./fields.js", function (module, exports, require) {
  *  string 单行 | text 多行 | code 代码 | path.dir 目录 | path.file 文件
  *  glob glob+命中预览 | enum 下拉 | boolean 开关 | number 数字
  *  server 服务器 | runtime 运行时 | keyvalue 键值表 | multiselect 标签多选
- *  ref:envset 环境变量组引用 | ref:snippet 脚本片段引用
+ *  ref:envset 环境变量组引用 | ref:snippet 脚本片段引用 | ref:pipeline 流水线引用（可搜索）
  */
 const { h, useState, useEffect, useRef, useMemo, ellipsis, fmtBytes } = require('./h.js');
 const { Icon, Button, Switch, TextInput, TextArea, Select, Field, Chip, Empty } = require('./ui.js');
 const { api } = require('./api.js');
+// 共享语法着色引擎（零依赖纯函数）：token 只产出语义 kind，颜色由 CSS 决定。
+const { normalizeLanguage, tokenizeLines } = require('./syntax.js');
 
 /** 一个可被鼠标点击的锚点容器，用于放浏览/预览下拉。 */
 function Anchor(props) {
@@ -1451,97 +2401,198 @@ function Anchor(props) {
 }
 
 /* ------------------------------------------------------------------ *
- * code：行号 + 极简着色
+ * code：深色终端观感的代码编辑器（着色层 + 透明 textarea 叠加）
  * ------------------------------------------------------------------ */
 
-const KEYWORDS = {
-  shell: /\b(if|then|else|elif|fi|for|while|do|done|case|esac|function|export|local|return|set|cd|echo|exit)\b/g,
-  javascript: /\b(const|let|var|function|return|if|else|for|while|await|async|import|export|class|new|try|catch|throw)\b/g,
-  python: /\b(def|class|import|from|return|if|elif|else|for|while|try|except|with|as|lambda|None|True|False|await|async)\b/g,
-};
+/** 把一行 token 渲染成语法着色的 span（颜色全部由 CSS 的 .dsh-devops-tok-* 决定）。 */
+function tokenSpans(tokens, keyPrefix) {
+  return tokens.map((token, i) =>
+    h('span', { key: keyPrefix + '-' + i, className: 'dsh-devops-tok dsh-devops-tok-' + token.kind }, token.text),
+  );
+}
 
-/** 极简语法着色：只处理注释、字符串、关键字三类，绝不注入 HTML。 */
-function highlight(line, language) {
-  const parts = [];
-  let rest = line;
-  const comment = language === 'shell' || language === 'python' ? /(^|\s)(#.*)$/ : /(\/\/.*)$/;
-  const cm = rest.match(comment);
-  if (cm) {
-    const idx = rest.length - cm[2].length;
-    rest = rest.slice(0, idx);
-    parts.push([cm[2], 'comment']);
-  }
-  const tokens = [];
-  const re = /("[^"]*"|'[^']*')/;
-  let m = rest.match(re);
-  while (m) {
-    const before = rest.slice(0, m.index);
-    tokens.push([before, null]);
-    tokens.push([m[1], 'string']);
-    rest = rest.slice(m.index + m[1].length);
-    m = rest.match(re);
-  }
-  tokens.push([rest, null]);
-  if (parts.length) tokens.push(parts[0]);
+/**
+ * 代码编辑器。
+ *
+ * 实现要点：一个**可编辑的透明 textarea** 叠在**着色高亮层**之上，两层用完全相同的
+ * 字体、行高、内边距与换行规则，因此光标与选区与看到的着色文本严丝合缝。
+ * 这样既得到语法着色（textarea 本身无法着色），又不牺牲编辑体验。
+ *
+ * 尺寸：内联时**随内容自动增高**（上限 30 行后内部滚动），并额外提供
+ * 「放大编辑」——全屏浮层里写长脚本，这是用户抱怨「写了很多就看不清」的正解。
+ *
+ * props: { field, value, onChange }
+ */
 
-  return tokens.map(([text, kind], i) => {
-    if (!text) return null;
-    if (kind) {
-      return h('span', { key: i, style: { color: kind === 'string' ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-label-caption)' } }, text);
+/** 语言显示名（工具栏标签用）。 */
+const CODE_LANG_LABEL = { shell: 'Shell', python: 'Python', javascript: 'JavaScript', json: 'JSON', yaml: 'YAML' };
+
+/**
+ * 代码编辑面：行号 + 着色层 + 透明输入层。
+ * props: { value, language, onChange, placeholder, minRows, maxRows, fill }
+ *   fill=true 时撑满父容器（全屏浮层用），否则按内容自动增高。
+ */
+function CodeSurface(props) {
+  const value = props.value === undefined || props.value === null ? '' : String(props.value);
+  const lang = props.language || 'shell';
+  const lines = useMemo(() => tokenizeLines(value, lang), [value, lang]);
+  const minRows = props.minRows || 8;
+  const maxRows = props.maxRows || 30;
+  const rows = props.fill ? 20 : Math.min(Math.max(lines.length + 1, minRows), maxRows);
+  const lineCount = props.fill ? Math.max(lines.length, minRows) : rows;
+  const hlRef = useRef(null);
+
+  /** 高亮层跟随输入层滚动（长脚本滚动时必须严丝合缝）。 */
+  function syncScroll(event) {
+    const pre = hlRef.current;
+    if (pre && pre.scrollTop !== undefined) {
+      pre.scrollTop = event.target.scrollTop;
+      pre.scrollLeft = event.target.scrollLeft;
     }
-    const kw = KEYWORDS[language];
-    if (!kw) return h('span', { key: i }, text);
-    const pieces = text.split(kw);
-    return h(
-      'span',
-      { key: i },
-      pieces.map((piece, j) =>
-        j % 2 === 1
-          ? h('span', { key: j, style: { color: 'var(--dsw-alias-state-business-primary)' } }, piece)
-          : h('span', { key: j }, piece),
+  }
+
+  return h(
+    'div',
+    {
+      className: 'dsh-devops-code',
+      'data-language': lang,
+      'data-fill': props.fill ? 'true' : undefined,
+      'data-rows': String(rows),
+    },
+    h(
+      'div',
+      { className: 'dsh-devops-code-gutter', 'aria-hidden': 'true' },
+      Array.from({ length: lineCount }, (_, i) => h('span', { key: i, className: 'dsh-devops-code-lineno' }, String(i + 1))),
+    ),
+    h(
+      'div',
+      { className: 'dsh-devops-code-shell' },
+      h(
+        'pre',
+        { className: 'dsh-devops-code-hl', 'aria-hidden': 'true', ref: hlRef },
+        lines.map((tokens, i) =>
+          h('span', { key: i, className: 'dsh-devops-code-hline' }, tokenSpans(tokens, 'l' + i).concat([h('br', { key: 'br' })])),
+        ),
       ),
-    );
-  });
+      h('textarea', {
+        className: 'dsh-devops-code-area',
+        value,
+        spellCheck: false,
+        wrap: 'off',
+        'data-language': lang,
+        placeholder: props.placeholder || '',
+        rows,
+        onChange: (e) => props.onChange(e.target.value),
+        onScroll: syncScroll,
+        onKeyDown: (e) => {
+          const el = e.target;
+          // Tab 插入两个空格（Shift+Tab 暂不反缩进，保持行为可预期）
+          if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = el.selectionStart;
+            const end = el.selectionEnd;
+            const next = value.slice(0, start) + '  ' + value.slice(end);
+            props.onChange(next);
+            requestAnimationFrame(() => {
+              el.selectionStart = el.selectionEnd = start + 2;
+            });
+          }
+        },
+      }),
+    ),
+  );
 }
 
 function CodeControl(props) {
   const field = props.field;
   const value = props.value === undefined || props.value === null ? '' : String(props.value);
-  const language = field.language || 'shell';
-  const lines = value.split('\n');
+  const lang = normalizeLanguage(field.language || 'shell');
+  const [expanded, setExpanded] = useState(false);
+  const lineCount = value === '' ? 0 : value.split('\n').length;
+
+  // 放大编辑时支持 Esc 关闭（Node 测试环境没有 document，跳过）
+  useEffect(() => {
+    if (!expanded || typeof document === 'undefined') return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setExpanded(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [expanded]);
+
   return h(
     'div',
-    { className: 'dsh-devops-code' },
+    { className: 'dsh-devops-code-block', 'data-language': lang, 'data-expanded': expanded ? 'true' : undefined },
     h(
       'div',
-      { className: 'dsh-devops-code-gutter', 'aria-hidden': 'true' },
-      lines.map((_, i) => String(i + 1)).join('\n'),
+      { className: 'dsh-devops-code-toolbar' },
+      h('span', { className: 'dsh-devops-code-lang' }, CODE_LANG_LABEL[lang] || lang),
+      h('span', { className: 'dsh-devops-hint' }, lineCount + ' 行'),
+      h('div', { className: 'dsh-devops-spacer' }),
+      h(Button, {
+        size: 'sm',
+        icon: 'eye',
+        label: '放大编辑',
+        className: 'dsh-devops-code-expand',
+        title: '在更大的编辑器中编写脚本（Esc 关闭）',
+        onClick: () => setExpanded(true),
+      }),
     ),
-    h('textarea', {
-      className: 'dsh-devops-code-area',
+    h(CodeSurface, {
       value,
-      spellCheck: false,
+      language: lang,
       placeholder: field.placeholder || '',
-      rows: field.rows || 6,
-      onChange: (e) => props.onChange(e.target.value),
-      onKeyDown: (e) => {
-        // Tab 插入两个空格，避免焦点跑掉
-        if (e.key === 'Tab') {
-          e.preventDefault();
-          const el = e.target;
-          const start = el.selectionStart;
-          const end = el.selectionEnd;
-          const next = value.slice(0, start) + '  ' + value.slice(end);
-          props.onChange(next);
-          requestAnimationFrame(() => {
-            el.selectionStart = el.selectionEnd = start + 2;
-          });
-        }
-      },
+      minRows: field.rows || 8,
+      onChange: props.onChange,
     }),
+    expanded
+      ? h(
+          'div',
+          {
+            className: 'dsh-devops-code-full-backdrop',
+            onMouseDown: (e) => {
+              if (e.target === e.currentTarget) setExpanded(false);
+            },
+          },
+          h(
+            'div',
+            {
+              className: 'dsh-devops-code-full',
+              role: 'dialog',
+              'aria-modal': 'true',
+              'aria-label': '放大编辑脚本',
+              'data-role': 'code-fullscreen',
+            },
+            h(
+              'div',
+              { className: 'dsh-devops-code-full-head' },
+              h('span', { className: 'dsh-devops-code-full-title dsh-devops-truncate' }, field.label || field.name || '脚本'),
+              h('span', { className: 'dsh-devops-tag dsh-devops-monospace' }, CODE_LANG_LABEL[lang] || lang),
+              h('span', { className: 'dsh-devops-hint' }, lineCount + ' 行'),
+              h('div', { className: 'dsh-devops-spacer' }),
+              h(Button, {
+                size: 'sm',
+                variant: 'ghost',
+                icon: 'close',
+                label: '关闭',
+                className: 'dsh-devops-code-full-close',
+                title: '关闭（Esc）',
+                onClick: () => setExpanded(false),
+              }),
+            ),
+            h(CodeSurface, {
+              value,
+              language: lang,
+              placeholder: field.placeholder || '',
+              fill: true,
+              minRows: 12,
+              onChange: props.onChange,
+            }),
+          ),
+        )
+      : null,
   );
 }
-
 /* ------------------------------------------------------------------ *
  * path.dir / path.file：浏览 + 校验
  * ------------------------------------------------------------------ */
@@ -1940,6 +2991,22 @@ function MultiSelectControl(props) {
  * ref:envset / ref:snippet：引用选择
  * ------------------------------------------------------------------ */
 
+/**
+ * 读取字段控件的数据上下文（App 用 state 构造的纯数据包）。
+ *
+ * 宿主 ctx 是 Cordis context：读取未 inject 的服务属性会直接抛
+ * `cannot get property "xxx" without inject`（渲染「引用脚本片段」字段时
+ * 表现为整块面板报错）。字段数据只是可选增强，误传时退化为空值即可。
+ */
+function dataOf(ctx, key) {
+  if (!ctx) return undefined;
+  try {
+    return ctx[key];
+  } catch {
+    return undefined;
+  }
+}
+
 function RefControl(props) {
   const field = props.field;
   const isEnvSet = field.type === 'ref:envset';
@@ -1973,6 +3040,227 @@ function RefControl(props) {
 }
 
 /* ------------------------------------------------------------------ *
+ * ref:pipeline：流水线引用（可搜索下拉 + 可手填）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 大小写不敏感的模糊匹配。
+ *
+ * 两级策略（都要支持，用户要的是「输入名字能模糊匹配」）：
+ *  1. 子串命中：优先级最高，命中位置越靠前、文本越短分越高；
+ *  2. 子序列命中：按顺序散落出现也算（如 "bd" 命中 "build-deploy"），分数次之。
+ *
+ * @returns {{score:number, positions:number[]}|null} null 表示不匹配
+ */
+function fuzzyMatch(text, query) {
+  const source = String(text === null || text === undefined ? '' : text);
+  const needle = String(query === null || query === undefined ? '' : query).trim().toLowerCase();
+  if (!needle) return { score: 0, positions: [] };
+  if (!source) return null;
+
+  const lower = source.toLowerCase();
+  const at = lower.indexOf(needle);
+  if (at >= 0) {
+    const positions = [];
+    for (let i = 0; i < needle.length; i += 1) positions.push(at + i);
+    // 前缀命中额外加分；同样命中时短文本更相关
+    return { score: 100 + (at === 0 ? 50 : 0) + Math.max(0, 20 - source.length), positions };
+  }
+
+  // 子序列：按顺序逐个找字符
+  const positions = [];
+  let qi = 0;
+  for (let i = 0; i < lower.length && qi < needle.length; i += 1) {
+    if (lower[i] === needle[qi]) {
+      positions.push(i);
+      qi += 1;
+    }
+  }
+  if (qi === needle.length) return { score: 40 + Math.max(0, 10 - source.length / 4), positions };
+  return null;
+}
+
+/**
+ * 按查询词过滤流水线候选（纯函数，便于直接断言）。
+ *
+ * 匹配 name / id / description 三处，name 命中权重最高（用户是按名字找的）。
+ * 查询词为空时返回全部（按名称排序），这样下拉一打开就能看到可选项。
+ *
+ * @returns {Array<{pipeline:object, score:number, namePositions:number[], idPositions:number[]}>}
+ */
+function matchPipelines(query, pipelines) {
+  const list = Array.isArray(pipelines) ? pipelines : [];
+  const needle = String(query === null || query === undefined ? '' : query).trim();
+  const out = [];
+  for (const item of list) {
+    if (!item || !item.id) continue;
+    const byName = fuzzyMatch(item.name || '', needle);
+    const byId = fuzzyMatch(item.id, needle);
+    const byDesc = needle ? fuzzyMatch(item.description || '', needle) : null;
+    if (needle && !byName && !byId && !byDesc) continue;
+    const score = Math.max(
+      byName ? byName.score + 25 : 0,
+      byId ? byId.score + 10 : 0,
+      byDesc ? byDesc.score : 0,
+    );
+    out.push({
+      pipeline: item,
+      score,
+      namePositions: byName ? byName.positions : [],
+      idPositions: byId ? byId.positions : [],
+    });
+  }
+  out.sort((a, b) =>
+    (b.score - a.score)
+    || String(a.pipeline.name || a.pipeline.id).localeCompare(String(b.pipeline.name || b.pipeline.id)));
+  return out;
+}
+
+/** 把命中的字符高亮出来（不新增 CSS 类，用既有 token 内联着色）。 */
+function highlightMatches(text, positions) {
+  const source = String(text === null || text === undefined ? '' : text);
+  const set = new Set(Array.isArray(positions) ? positions : []);
+  if (set.size === 0) return source;
+  const parts = [];
+  let buffer = '';
+  for (let i = 0; i < source.length; i += 1) {
+    if (set.has(i)) {
+      if (buffer) {
+        parts.push(buffer);
+        buffer = '';
+      }
+      parts.push(
+        h(
+          'mark',
+          {
+            key: 'h' + i,
+            style: {
+              background: 'var(--dsw-alias-state-warn-tertiary)',
+              color: 'inherit',
+              borderRadius: '2px',
+              padding: '0 1px',
+            },
+          },
+          source[i],
+        ),
+      );
+    } else {
+      buffer += source[i];
+    }
+  }
+  if (buffer) parts.push(buffer);
+  return parts;
+}
+
+/** 候选列表一次最多渲染多少条（超出给一句提示并可继续输入收窄）。 */
+const PIPELINE_MAX_ROWS = 8;
+
+/**
+ * 流水线引用控件（ref:pipeline）。
+ *
+ * 与 ref:envset / ref:snippet 的静态 Select 不同，这里必须：
+ *  - 可搜索：输入名称或 ID 都能模糊匹配（大小写不敏感）；
+ *  - 显示名字而不只是 id（用户要的是「选择已有的流水线」）；
+ *  - 仍允许手填任意 id（流水线可能尚未创建或来自导入）——输入框本身就是值；
+ *  - 当前值不在候选里时显示「(未知流水线) xxx」而不是空白。
+ *
+ * props: { field, value, onChange, ctx }
+ */
+function PipelineRefControl(props) {
+  const field = props.field || {};
+  const value = props.value === undefined || props.value === null ? '' : String(props.value);
+  // 候选来自 App 下发的 fieldCtx.pipelines；缺失/非数组时降级为空列表（不崩）。
+  const raw = dataOf(props.ctx, 'pipelines');
+  const pipelines = Array.isArray(raw) ? raw : [];
+  const selected = pipelines.find((item) => item && item.id === value) || null;
+  const matches = matchPipelines(value, pipelines);
+  const shown = matches.slice(0, PIPELINE_MAX_ROWS);
+  const hidden = matches.length - shown.length;
+  const unknown = value !== '' && !selected;
+
+  return h(
+    'div',
+    null,
+    h(
+      'div',
+      { className: 'dsh-devops-field-row' },
+      h(TextInput, {
+        value,
+        placeholder: field.placeholder || '输入流水线名称或 ID 搜索',
+        onChange: (v) => props.onChange(v),
+        onBlur: () => props.onBlur && props.onBlur(),
+      }),
+      value
+        ? h(Button, { size: 'sm', variant: 'ghost', icon: 'close', title: '清除引用', onClick: () => props.onChange('') })
+        : null,
+    ),
+
+    // 当前值的可读反馈：已知显示名字，未知显式标注，绝不静默留白
+    h(
+      'div',
+      { style: { marginTop: '4px' } },
+      selected
+        ? h(
+            'span',
+            { className: 'dsh-devops-hint' },
+            '当前：',
+            h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, selected.name || selected.id),
+            ' · ',
+            h('span', { className: 'dsh-devops-monospace' }, selected.id),
+          )
+        : unknown
+          ? h(Chip, { tone: 'warn', title: '候选里没有这条流水线，将按原样使用' }, '(未知流水线) ' + value)
+          : h('span', { className: 'dsh-devops-hint' }, '未选择（可点下方候选，或直接输入 ID）'),
+    ),
+
+    pipelines.length === 0
+      ? h('div', { className: 'dsh-devops-hint', style: { marginTop: '4px' } }, '没有可选的流水线（仍可直接输入 ID）')
+      : shown.length === 0
+        ? h('div', { className: 'dsh-devops-hint', style: { marginTop: '4px' } }, '没有匹配的流水线（可直接输入 ID 新建引用）')
+        : h(
+            'div',
+            { className: 'dsh-devops-list', style: { marginTop: '6px', maxHeight: '190px', overflow: 'auto' } },
+            shown.map((entry) =>
+              h(
+                'div',
+                {
+                  key: entry.pipeline.id,
+                  className: 'dsh-devops-list-row',
+                  'data-active': entry.pipeline.id === value ? 'true' : undefined,
+                  role: 'button',
+                  tabIndex: 0,
+                  title: entry.pipeline.name ? entry.pipeline.name + ' · ' + entry.pipeline.id : entry.pipeline.id,
+                  onClick: () => props.onChange(entry.pipeline.id),
+                  onKeyDown: (event) => {
+                    if (event && (event.key === 'Enter' || event.key === ' ')) {
+                      if (event.preventDefault) event.preventDefault();
+                      props.onChange(entry.pipeline.id);
+                    }
+                  },
+                },
+                h(
+                  'span',
+                  { className: 'dsh-devops-truncate' },
+                  highlightMatches(entry.pipeline.name || entry.pipeline.id, entry.namePositions),
+                ),
+                h(
+                  'span',
+                  { className: 'dsh-devops-monospace', style: { color: 'var(--dsw-alias-label-tertiary)', flex: 'none' } },
+                  highlightMatches(entry.pipeline.id, entry.idPositions),
+                ),
+                entry.pipeline.category
+                  ? h('span', { className: 'dsh-devops-tag' }, entry.pipeline.category)
+                  : null,
+              ),
+            ),
+            hidden > 0
+              ? h('div', { className: 'dsh-devops-hint' }, '还有 ' + hidden + ' 条匹配，继续输入可收窄')
+              : null,
+          ),
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * 分发器
  * ------------------------------------------------------------------ */
 
@@ -1981,12 +3269,13 @@ function enumOptions(field, ctx) {
   if (Array.isArray(field.options) && field.options.length) return field.options;
   const from = field.optionsFrom;
   if (!from) return [];
-  if (from === 'server') return (ctx.servers || []).map((s) => s.id);
+  const servers = dataOf(ctx, 'servers') || [];
+  if (from === 'server') return servers.map((s) => s.id);
   if (from === 'shell') return ['auto', 'bash', 'sh', 'zsh', 'pwsh', 'powershell', 'cmd'];
   if (from.indexOf('runtime:') === 0) {
     const kind = from.slice('runtime:'.length);
     const set = new Set(RUNTIME_VERSIONS[kind] || []);
-    for (const server of ctx.servers || []) {
+    for (const server of servers) {
       for (const key of Object.keys(server.runtimes || {})) {
         if (key.indexOf(kind + ':') === 0) set.add(key.slice(kind.length + 1));
       }
@@ -2042,7 +3331,7 @@ function FieldControl(props) {
       control = h(Select, {
         value: value === undefined ? '' : value,
         placeholder: field.placeholder || '（默认）',
-        options: enumOptions(field, props.ctx || {}),
+        options: enumOptions(field, props.ctx),
         onChange,
       });
       break;
@@ -2067,7 +3356,7 @@ function FieldControl(props) {
       control = h(Select, {
         value: value === undefined ? '' : value,
         placeholder: field.placeholder || '（用默认服务器）',
-        options: (props.ctx && props.ctx.servers ? props.ctx.servers : []).map((s) => ({
+        options: (dataOf(props.ctx, 'servers') || []).map((s) => ({
           value: s.id,
           label: s.name + (s.kind === 'local' ? '（本机）' : ' · ' + (s.host || '')),
         })),
@@ -2077,7 +3366,7 @@ function FieldControl(props) {
     case 'runtime':
       control = h(RuntimeControl, Object.assign({}, common, {
         serverId: resolved,
-        defaultServer: props.ctx && props.ctx.defaultServer,
+        defaultServer: dataOf(props.ctx, 'defaultServer'),
         serverFor: props.serverFor,
         onProvisioned: props.onProvisioned,
       }));
@@ -2089,10 +3378,14 @@ function FieldControl(props) {
       control = h(MultiSelectControl, Object.assign({}, common, { options: props.optionValues }));
       break;
     case 'ref:envset':
-      control = h(RefControl, Object.assign({}, common, { envsets: props.ctx && props.ctx.envsets }));
+      control = h(RefControl, Object.assign({}, common, { envsets: dataOf(props.ctx, 'envsets') }));
       break;
     case 'ref:snippet':
-      control = h(RefControl, Object.assign({}, common, { snippets: props.ctx && props.ctx.snippets }));
+      control = h(RefControl, Object.assign({}, common, { snippets: dataOf(props.ctx, 'snippets') }));
+      break;
+    case 'ref:pipeline':
+      // 候选来自 App 下发的 fieldCtx.pipelines（缺失时控件内降级为空列表）
+      control = h(PipelineRefControl, Object.assign({}, common, { ctx: props.ctx }));
       break;
     case 'string':
     default:
@@ -2116,6 +3409,10 @@ exports.GlobControl = GlobControl;
 exports.RuntimeControl = RuntimeControl;
 exports.KeyValueControl = KeyValueControl;
 exports.MultiSelectControl = MultiSelectControl;
+exports.RefControl = RefControl;
+exports.PipelineRefControl = PipelineRefControl;
+exports.matchPipelines = matchPipelines;
+exports.fuzzyMatch = fuzzyMatch;
 exports.enumOptions = enumOptions;
 });
 
@@ -2330,40 +3627,158 @@ __def("./logs.js", function (module, exports, require) {
 /**
  * 实时日志面板：SSE 订阅（契约 §3.11）+ 历史补齐 + 自动滚动 + 暂停跟随 +
  * 关键字过滤 + 下载。
+ *
+ * 显示层（task-7）：
+ *  - 深色终端观感：只加类名，**颜色与字体全部由 CSS 决定**（JS 里不写色值）；
+ *  - 语法着色：走 `./syntax.js` 的 tokenizer，每个 token 渲染成
+ *    `<span class="dsh-devops-tok dsh-devops-tok-<kind>">`，配色由样式表给；
+ *  - 语言：打开时对首批历史内容自动识别一次（之后沿用），工具栏可手动切换，
+ *    切到「纯文本」则整块不再产生 token span。
  */
 const { h, useState, useEffect, useRef, useMemo, useCallback, fmtBytes } = require('./h.js');
-const { Icon, Button, TextInput } = require('./ui.js');
+const { Icon, Button, TextInput, Select } = require('./ui.js');
 const { api } = require('./api.js');
 const { createRunStream } = require('./sse.js');
+const { tokenizeLine, detectLanguage, normalizeLanguage } = require('./syntax.js');
 
 const MAX_LINES = 5000;
+/** 自动识别语言时最多纳入的行数（猜一次就沿用，避免流式日志反复改判）。 */
+const DETECT_SAMPLE_LINES = 60;
+/** 纯实时流（打开时还没有历史）时，累积多少行后也识别一次语言。 */
+const DETECT_STREAM_SAMPLE = 6;
+/** 行 → token 的缓存上限（滚动/过滤会反复重渲染同一批行）。 */
+const TOKEN_CACHE_MAX = 2000;
 
-/** 单条日志行；命中过滤词时高亮。 */
+/** 语言切换项：auto 用自动识别，text 关闭着色。 */
+const LANGUAGE_OPTIONS = [
+  { value: 'auto', label: '自动' },
+  { value: 'shell', label: 'Shell' },
+  { value: 'python', label: 'Python' },
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'json', label: 'JSON' },
+  { value: 'yaml', label: 'YAML' },
+  { value: 'text', label: '纯文本' },
+];
+
+/**
+ * 从若干行里识别语言：行可以是字符串，也可以是 {text} 形式。
+ * @returns {string} 语言名；样本为空（或全是空白）时返回空串，表示「猜不出来，先不猜」
+ */
+function detectFromLines(lines) {
+  const list = Array.isArray(lines) ? lines : [];
+  const text = list
+    .slice(0, DETECT_SAMPLE_LINES)
+    .map((l) => {
+      if (l === null || l === undefined) return '';
+      if (typeof l === 'string') return l;
+      return l.text === null || l.text === undefined ? '' : String(l.text);
+    })
+    .join('\n');
+  if (!text.trim()) return '';
+  return detectLanguage(text);
+}
+
+/** 纯文本模式：不产生任何语法 token。 */
+function isPlainMode(mode) {
+  const m = String(mode === null || mode === undefined ? '' : mode).trim().toLowerCase();
+  return m === 'text' || m === 'plain' || m === 'none';
+}
+
+/**
+ * 由「用户选择 + 自动识别结果」算出真正生效的语言；关闭着色时返回空串。
+ * @param {string} mode auto | shell | python | javascript | json | yaml | text
+ * @param {string} detected detectLanguage() 的结果
+ */
+function resolveLanguage(mode, detected) {
+  if (isPlainMode(mode)) return '';
+  if (!mode || mode === 'auto') return normalizeLanguage(detected || 'shell');
+  return normalizeLanguage(mode);
+}
+
+/** 行 → token；language 为空串表示纯文本（整行一个 plain token，不包 span）。 */
+function tokensForLine(text, language) {
+  const raw = text === null || text === undefined ? '' : String(text);
+  if (!language) return [{ text: raw, kind: 'plain' }];
+  const key = language + '\u0000' + raw;
+  const cached = tokenCache.get(key);
+  if (cached) return cached;
+  const tokens = tokenizeLine(raw, language);
+  if (tokenCache.size >= TOKEN_CACHE_MAX) tokenCache.clear();
+  tokenCache.set(key, tokens);
+  return tokens;
+}
+
+/** 行→token 缓存（模块级；纯函数结果，可安全复用）。 */
+const tokenCache = new Map();
+
+/**
+ * 在一个 token 的文本里标出过滤命中：大小写不敏感，只取第一处（与旧行为一致）。
+ * @returns {Array<{text:string, hit:boolean}>}
+ */
+function splitHits(text, keyword) {
+  const raw = text === null || text === undefined ? '' : String(text);
+  const kw = String(keyword || '');
+  if (!kw) return [{ text: raw, hit: false }];
+  const idx = raw.toLowerCase().indexOf(kw.toLowerCase());
+  if (idx < 0) return [{ text: raw, hit: false }];
+  const parts = [];
+  if (idx > 0) parts.push({ text: raw.slice(0, idx), hit: false });
+  parts.push({ text: raw.slice(idx, idx + kw.length), hit: true });
+  if (idx + kw.length < raw.length) parts.push({ text: raw.slice(idx + kw.length), hit: false });
+  return parts;
+}
+
+/**
+ * 渲染一行日志的正文节点。
+ *  - 普通模式：token → `.dsh-devops-tok-<kind>` span（颜色由 CSS 决定）；
+ *  - 纯文本模式：不着色，不产生任何 tok span；
+ *  - 过滤命中：命中片段包 <mark>，**包在所属 token 的 span 内部**，不破坏着色。
+ */
+function renderLineContent(line, filter, language) {
+  const tokens = tokensForLine(line && line.text, language);
+  const nodes = [];
+  tokens.forEach((token, ti) => {
+    const pieces = filter ? splitHits(token.text, filter) : [{ text: token.text, hit: false }];
+    pieces.forEach((piece, pi) => {
+      const key = ti + '-' + pi;
+      if (!language) {
+        // 纯文本：不产生 tok span；命中仍用 mark 高亮
+        nodes.push(piece.hit ? h('mark', { key }, piece.text) : piece.text);
+        return;
+      }
+      nodes.push(
+        h('span', { key, className: 'dsh-devops-tok dsh-devops-tok-' + token.kind }, piece.hit ? h('mark', null, piece.text) : piece.text),
+      );
+    });
+  });
+  return nodes;
+}
+
+/** 单条日志行：语法着色 + 过滤命中高亮；gap 行单独提示。纯函数，无 hook。 */
 function LogLine(props) {
   const line = props.line;
   if (line.gap) {
     return h('div', { className: 'dsh-devops-log-gap' }, '—— 断线期间跳过了 seq ' + line.from + ' ~ ' + line.to + ' ——');
   }
+  const language = props.language || '';
   return h(
     'div',
-    { className: 'dsh-devops-logline', 'data-stream': line.stream || 'stdout' },
-    props.filter ? highlight(line.text, props.filter) : line.text,
+    {
+      className: 'dsh-devops-logline',
+      'data-stream': line.stream || 'stdout',
+      'data-lang': language || 'plain',
+      'data-seq': line.seq === undefined || line.seq === null ? undefined : String(line.seq),
+    },
+    props.lineNo
+      ? h('span', { className: 'dsh-devops-logline-no', key: 'no' }, String(props.lineNo))
+      : null,
+    h('span', { className: 'dsh-devops-logline-text', key: 'text' }, renderLineContent(line, props.filter, language)),
   );
-}
-
-function highlight(text, keyword) {
-  const idx = text.toLowerCase().indexOf(keyword.toLowerCase());
-  if (idx < 0) return text;
-  return [
-    text.slice(0, idx),
-    h('mark', { key: 'k' }, text.slice(idx, idx + keyword.length)),
-    text.slice(idx + keyword.length),
-  ];
 }
 
 /**
  * 日志面板。
- * props: { runId, stepId, live, onClose, meta }
+ * props: { runId, stepId, live, onClose, meta, language }
  */
 function LogPanel(props) {
   const [lines, setLines] = useState([]);
@@ -2372,9 +3787,23 @@ function LogPanel(props) {
   const [status, setStatus] = useState(props.live ? 'connecting' : 'idle');
   const [bytes, setBytes] = useState(0);
   const [lossy, setLossy] = useState(false);
+  const [langMode, setLangMode] = useState(props.language || 'auto');
+  const [detected, setDetected] = useState('');
+  const [showLineNo, setShowLineNo] = useState(true);
   const viewRef = useRef(null);
   const fromRef = useRef(0);
   const streamRef = useRef(null);
+  const detectedRef = useRef(false);
+  const sampleRef = useRef([]);
+
+  /** 对这步骤的脚本/日志内容自动识别一次语言，之后沿用（不因流式新行改判）。 */
+  const guessLanguage = useCallback((sample) => {
+    if (detectedRef.current) return;
+    const guess = detectFromLines(sample);
+    if (!guess) return;
+    detectedRef.current = true;
+    setDetected(guess);
+  }, []);
 
   /** 历史日志补齐（打开面板或重连后）。 */
   const loadHistory = useCallback(
@@ -2384,6 +3813,7 @@ function LogPanel(props) {
         const result = await api.runLogs(props.runId, { stepId: props.stepId, from: from || 0 });
         if (!result) return;
         const next = result.lines || [];
+        guessLanguage(next);
         fromRef.current = result.next || fromRef.current;
         setBytes(result.bytes || 0);
         setLossy(!!result.lossy);
@@ -2395,7 +3825,7 @@ function LogPanel(props) {
         setStatus('error');
       }
     },
-    [props.runId, props.stepId],
+    [props.runId, props.stepId, guessLanguage],
   );
 
   // 面板打开就拉一次历史
@@ -2418,6 +3848,11 @@ function LogPanel(props) {
         if (name === 'ping') return;
         if (name === 'log') {
           if (props.stepId && data.stepId && data.stepId !== props.stepId) return;
+          // 打开时还没有历史（任务刚起）：先用前几行识别一次语言，之后沿用
+          if (!detectedRef.current) {
+            sampleRef.current.push(data.text || '');
+            if (sampleRef.current.length >= DETECT_STREAM_SAMPLE) guessLanguage(sampleRef.current);
+          }
           setLines((prev) => {
             const next = prev.concat([{ seq: data.seq, ts: data.ts, stream: data.stream, text: data.text }]);
             return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next;
@@ -2454,6 +3889,8 @@ function LogPanel(props) {
     return lines.filter((line) => line.gap || (line.text || '').toLowerCase().includes(lower));
   }, [lines, filter]);
 
+  const activeLanguage = resolveLanguage(langMode, detected);
+
   function jumpToEnd() {
     setFollow(true);
     const el = viewRef.current;
@@ -2476,10 +3913,14 @@ function LogPanel(props) {
   const statusText =
     status === 'open' ? '实时' : status === 'connecting' ? '连接中' : status === 'error' ? '已断开' : status === 'idle' ? '已结束' : '已关闭';
   const statusTone = status === 'open' ? 'ok' : status === 'error' ? 'error' : 'idle';
+  const autoLabel = detected ? '自动（' + detected + '）' : '自动';
+  const langOptions = LANGUAGE_OPTIONS.map((opt) =>
+    opt.value === 'auto' ? { value: opt.value, label: autoLabel } : { value: opt.value, label: opt.label },
+  );
 
   return h(
     'div',
-    { className: 'dsh-devops-logpanel' },
+    { className: 'dsh-devops-logpanel', 'data-lang': activeLanguage || 'text' },
     h(
       'div',
       { className: 'dsh-devops-logbar' },
@@ -2490,6 +3931,19 @@ function LogPanel(props) {
         onChange: setFilter,
         className: 'dsh-devops-input',
         style: { width: '150px' },
+      }),
+      h(Select, {
+        value: langMode,
+        className: 'dsh-devops-langselect',
+        options: langOptions,
+        onChange: (value) => setLangMode(value),
+      }),
+      h(Button, {
+        size: 'sm',
+        active: showLineNo,
+        icon: 'history',
+        label: showLineNo ? '隐藏行号' : '显示行号',
+        onClick: () => setShowLineNo(!showLineNo),
       }),
       h('span', { className: 'dsh-devops-hint' }, visible.length + ' 行 · ' + fmtBytes(bytes || 0)),
       lossy ? h('span', { className: 'dsh-devops-chip', 'data-tone': 'warn' }, '日志已滚出内存环') : null,
@@ -2511,6 +3965,8 @@ function LogPanel(props) {
       {
         className: 'dsh-devops-logview',
         ref: viewRef,
+        'data-lang': activeLanguage || 'text',
+        'data-lineno': showLineNo ? 'on' : 'off',
         // 用户手动往上滚时自动取消跟随，滚回底部再恢复
         onScroll: (e) => {
           const el = e.target;
@@ -2520,7 +3976,15 @@ function LogPanel(props) {
         },
       },
       visible.length
-        ? visible.map((line, i) => h(LogLine, { key: (line.seq || 'g') + '-' + i, line, filter }))
+        ? visible.map((line, i) =>
+            h(LogLine, {
+              key: (line.seq || 'g') + '-' + i,
+              line,
+              filter,
+              language: activeLanguage,
+              lineNo: showLineNo ? line.seq || i + 1 : 0,
+            }),
+          )
         : h('div', { className: 'dsh-devops-hint' }, status === 'connecting' ? '正在连接日志流…' : '暂无日志输出'),
     ),
   );
@@ -2528,19 +3992,29 @@ function LogPanel(props) {
 
 exports.LogPanel = LogPanel;
 exports.LogLine = LogLine;
+exports.detectFromLines = detectFromLines;
+exports.LANGUAGE_OPTIONS = LANGUAGE_OPTIONS;
+exports.resolveLanguage = resolveLanguage;
+exports.renderLineContent = renderLineContent;
+exports.tokensForLine = tokensForLine;
 });
 
 __def("./canvas.js", function (module, exports, require) {
 /**
- * 流水线画布：阶段泳道 + 卡片拖拽（自研，HTML5 DnD）
- * + 「并行」开关 + needs 依赖边（SVG 贝塞尔）。
- * 不引任何拖拽/图表库。
+ * 流水线画布：横向编排（阶段 = 列，列内节点自上而下堆叠为块状卡片）。
  *
- * 所有结构变更都通过 props.onChange(nextPipeline) 一次性提交完整新对象，
- * 保证不出现「基于过期 props 二次修改」的覆盖问题。
+ * 设计要点：
+ * - 阶段自左向右成列，画布横向可滚动；列头、列与列之间、画布末尾都能就地插入新阶段。
+ * - 节点是块状卡片：序号 / 标题 / 节点类型 / 执行条件 / 服务器 / 超时 / needs / 产物。
+ * - 动效只用 CSS transition/animation（见 styles.js），并尊重 prefers-reduced-motion。
+ * - 所有结构变更都通过 props.onChange(完整新对象) 一次性提交完整新对象，
+ *   保证不出现「基于过期 props 二次修改」的覆盖问题。
+ *
+ * 契约约束（docs/CONTRACT.md §2.1）：needs（DAG 调度）与阶段 parallel 不得混用。
+ * 因此开启阶段并行前先检查，冲突时阻止提交并给出可见提示。
  */
 const { h, useState, useEffect, useRef, useMemo } = require('./h.js');
-const { Button, Chip } = require('./ui.js');
+const { Chip, Icon } = require('./ui.js');
 
 /** 生成稳定 id：优先用安全字符集，冲突时加短随机后缀。 */
 function makeId(prefix, existing) {
@@ -2554,6 +4028,21 @@ function makeId(prefix, existing) {
 
 /** 拖拽上下文：用模块级变量而非 dataTransfer，兼容性更好。 */
 const dragState = { current: null };
+
+/**
+ * 二次确认。浏览器里有 window.confirm；Node 测试环境里没有 → 返回 undefined（视为已确认）。
+ * 这样「有没有确认框」不会与「点了按钮是否提交」绑死：用例显式把 globalThis.confirm
+ * 打成 () => false 就能验证取消分支。
+ */
+function browserConfirm(message) {
+  if (typeof globalThis === 'undefined' || typeof globalThis.confirm !== 'function') return undefined;
+  return globalThis.confirm(message);
+}
+
+/** 深拷贝：画布上所有结构变更都在副本上做，再整体提交。 */
+function clonePipeline(pipeline) {
+  return JSON.parse(JSON.stringify(pipeline || {}));
+}
 
 /** 新建 job 的默认形状，严格对齐契约 §2.1。 */
 function newJob(id, descriptor) {
@@ -2588,59 +4077,296 @@ function collectJobIds(pipeline) {
   return ids;
 }
 
+/**
+ * 流水线是否已声明 needs。
+ * 契约 §2.1：任一 job 有非空 needs → 整条流水线走 DAG；此时不得再开启阶段并行。
+ */
+function pipelineHasNeeds(pipeline) {
+  for (const stage of (pipeline && pipeline.stages) || []) {
+    for (const job of stage.jobs || []) {
+      if (job.needs && job.needs.length) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 清掉所有 job 中指向「已被删除的 job」的 needs。
+ *
+ * 与 editor.js 的 deleteJob() 同一语义：删节点必须顺带清依赖，否则会留下悬空 needs。
+ * 悬空 needs 的后果已实测（真实校验函数）：
+ * - validatePipeline 报 stages[x].jobs[y].needs[z] / missing-field「依赖的作业不存在」
+ * - buildGraph 报 job:x.needs / unknown-dependency，运行时抛「job j2 依赖了不存在的 job：j1」
+ * 因此删除阶段时必须在**同一份新对象**里清理，保证删除后仍可通过校验、可运行。
+ *
+ * @param {{stages?: Array}} next 已改过的流水线副本（原地清理）
+ * @param {string[]} removedIds 被删除的 job id
+ * @returns {number} 被清掉的 needs 条数
+ */
+function cleanRemovedNeeds(next, removedIds) {
+  const removed = new Set(removedIds || []);
+  if (removed.size === 0) return 0;
+  let cleaned = 0;
+  for (const stage of (next && next.stages) || []) {
+    for (const job of stage.jobs || []) {
+      if (!Array.isArray(job.needs) || job.needs.length === 0) continue;
+      const kept = job.needs.filter((n) => !removed.has(n));
+      if (kept.length !== job.needs.length) {
+        cleaned += job.needs.length - kept.length;
+        job.needs = kept;
+      }
+    }
+  }
+  return cleaned;
+}
+
+/** 数值取一位小数，避免路径字符串里出现长浮点。 */
+function round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+/**
+ * 依赖边的几何计算（列布局专用，纯函数便于测试）。
+ *
+ * rect 形如 { left, top, width, height }，坐标同为「画布内容坐标系」。
+ * 列布局下不能假设起止点左右相邻，故分三种走线：
+ * - forward ：下游在右侧 → 出右边缘、入左边缘，横向控制点。
+ * - vertical：上下游同列（上下相邻）→ 出下边缘、入上边缘，纵向控制点。
+ * - backward：下游在左侧（跨列回指）→ 从卡片下方绕行，避免压住卡片。
+ */
+function buildEdgePath(a, b) {
+  const ax = a.left + a.width / 2;
+  const ay = a.top + a.height / 2;
+  const bx = b.left + b.width / 2;
+  const by = b.top + b.height / 2;
+
+  // 同列：水平中心几乎重合
+  if (Math.abs(bx - ax) < 16) {
+    const down = by >= ay;
+    const x1 = ax;
+    const y1 = down ? a.top + a.height : a.top;
+    const x2 = bx;
+    const y2 = down ? b.top : b.top + b.height;
+    const my = (y1 + y2) / 2;
+    return {
+      kind: 'vertical',
+      d:
+        'M' + round1(x1) + ',' + round1(y1) +
+        ' C' + round1(x1) + ',' + round1(my) +
+        ' ' + round1(x2) + ',' + round1(my) +
+        ' ' + round1(x2) + ',' + round1(y2),
+    };
+  }
+
+  // 下游在右侧：右边缘 → 左边缘
+  if (bx > ax) {
+    const x1 = a.left + a.width;
+    const y1 = ay;
+    const x2 = b.left;
+    const y2 = by;
+    const dx = Math.max(28, (x2 - x1) / 2);
+    return {
+      kind: 'forward',
+      d:
+        'M' + round1(x1) + ',' + round1(y1) +
+        ' C' + round1(x1 + dx) + ',' + round1(y1) +
+        ' ' + round1(x2 - dx) + ',' + round1(y2) +
+        ' ' + round1(x2) + ',' + round1(y2),
+    };
+  }
+
+  // 反向（下游列在左侧）：从两张卡片下方绕行
+  const x1 = ax;
+  const y1 = a.top + a.height;
+  const x2 = bx;
+  const y2 = b.top + b.height;
+  const cy = Math.max(y1, y2) + 22;
+  return {
+    kind: 'backward',
+    d:
+      'M' + round1(x1) + ',' + round1(y1) +
+      ' C' + round1(x1) + ',' + round1(cy) +
+      ' ' + round1(x2) + ',' + round1(cy) +
+      ' ' + round1(x2) + ',' + round1(y2),
+  };
+}
+
+/** 元素相对画布内容原点的矩形。 */
+function rectOf(el, base) {
+  const r = el.getBoundingClientRect();
+  return { left: r.left - base.left, top: r.top - base.top, width: r.width, height: r.height };
+}
+
+/**
+ * 块状节点卡片。
+ * props: { job, stageId, index, selected, dragging, onSelect, onDragStart, onDragEnd, readonly }
+ *
+ * readonly=true 时同构复用为只读卡片（详情页等）：不设 draggable、不挂拖拽回调、
+ * 文案也不再提示拖拽。只读分支不影响编辑器——编辑器不传 readonly，走的仍是原路径。
+ */
 function NodeCard(props) {
   const job = props.job;
+  const readonly = props.readonly === true;
+  const whenText = job.when === 'manual' ? '手动触发' : job.when === 'always' ? '总是执行' : '上游成功后';
+  const seconds = job.timeoutMs ? Math.round(job.timeoutMs / 1000) : 0;
+  const needs = job.needs || [];
+  const artifacts = job.artifacts || [];
+
+  /**
+   * 状态色：把运行状态挂成 data-status / data-tone，颜色由 styles.js 决定。
+   * 编辑器里通常没有运行数据（status 为 pending，保持中性）；
+   * 详情页/运行页会把该节点最近一次执行状态传进来。
+   */
+  const status = props.status || 'pending';
+  const statusTone =
+    status === 'success' ? 'ok'
+      : status === 'failed' ? 'error'
+        : status === 'running' ? 'busy'
+          : status === 'canceled' ? 'warn'
+            : 'idle';
+
+  const cardProps = {
+    className: 'dsh-devops-nodecard',
+    'data-role': 'node-card',
+    'data-readonly': readonly ? 'true' : undefined,
+    'data-selected': props.selected ? 'true' : undefined,
+    'data-dragging': props.dragging ? 'true' : undefined,
+    'data-status': status,
+    'data-tone': statusTone,
+    draggable: readonly ? false : true,
+    title: readonly ? '点击查看节点信息' : '拖拽可调整顺序或移动到其它阶段',
+    onClick: (e) => {
+      if (e && e.stopPropagation) e.stopPropagation();
+      if (props.onSelect) props.onSelect(job.id);
+    },
+  };
+  if (!readonly) {
+    cardProps.onDragStart = (e) => {
+      dragState.current = { jobId: job.id, stageId: props.stageId };
+      if (props.onDragStart) props.onDragStart(job.id);
+      try {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', job.id);
+      } catch {
+        /* 某些环境不允许写 dataTransfer，忽略 */
+      }
+    };
+    cardProps.onDragEnd = () => {
+      dragState.current = null;
+      if (props.onDragEnd) props.onDragEnd();
+    };
+  }
+
   return h(
     'div',
-    {
-      className: 'dsh-devops-nodecard',
-      'data-selected': props.selected ? 'true' : undefined,
-      'data-dragging': props.dragging ? 'true' : undefined,
-      draggable: true,
-      title: '拖拽可调整顺序或移动到其它阶段',
-      onClick: (e) => {
-        e.stopPropagation();
-        props.onSelect(job.id);
-      },
-      onDragStart: (e) => {
-        dragState.current = { jobId: job.id, stageId: props.stageId };
-        props.onDragStart && props.onDragStart(job.id);
-        try {
-          e.dataTransfer.effectAllowed = 'move';
-          e.dataTransfer.setData('text/plain', job.id);
-        } catch {
-          /* 某些环境不允许写 dataTransfer，忽略 */
-        }
-      },
-      onDragEnd: () => {
-        dragState.current = null;
-        props.onDragEnd && props.onDragEnd();
-      },
-    },
-    h('div', { className: 'dsh-devops-nodecard-title dsh-devops-truncate' }, job.name || job.id),
+    cardProps,
+    h(
+      'div',
+      { className: 'dsh-devops-nodecard-head' },
+      props.index ? h('span', { className: 'dsh-devops-nodecard-index' }, String(props.index)) : null,
+      h('span', { className: 'dsh-devops-nodecard-title dsh-devops-truncate' }, job.name || job.id),
+      job.allowFailure ? h('span', { className: 'dsh-devops-nodecard-flag', title: '允许失败，失败不阻断后续' }, '容错') : null,
+    ),
+    h('div', { className: 'dsh-devops-nodecard-type dsh-devops-monospace dsh-devops-truncate', title: job.node }, job.node),
     h(
       'div',
       { className: 'dsh-devops-nodecard-meta' },
-      h('span', null, job.node),
-      h('span', null, job.when === 'manual' ? '手动' : job.when === 'always' ? '总是' : '成功时'),
-      job.server ? h('span', null, job.server) : null,
+      h('span', { className: 'dsh-devops-nodecard-key' }, '执行条件'),
+      h('span', { className: 'dsh-devops-truncate' }, whenText),
+      h('span', { className: 'dsh-devops-nodecard-key' }, '服务器'),
+      h('span', { className: 'dsh-devops-truncate' }, job.server || '（默认）'),
+      seconds ? h('span', { className: 'dsh-devops-nodecard-key' }, '超时') : null,
+      seconds ? h('span', null, seconds + 's') : null,
     ),
-    job.needs && job.needs.length ? h('div', { className: 'dsh-devops-nodecard-meta', style: { marginTop: '3px' } }, 'needs：' + job.needs.join('、')) : null,
+    needs.length
+      ? h(
+          'div',
+          { className: 'dsh-devops-nodecard-needs' },
+          h('span', { className: 'dsh-devops-nodecard-key' }, 'needs'),
+          needs.map((need) => h('span', { key: need, className: 'dsh-devops-nodecard-need' }, need)),
+        )
+      : null,
+    artifacts.length ? h('div', { className: 'dsh-devops-nodecard-foot' }, artifacts.length + ' 项产物') : null,
+  );
+}
+
+/** 列头小按钮：统一 data-role 便于定位与测试。 */
+function HeadButton(props) {
+  return h(
+    'button',
+    {
+      type: 'button',
+      className: 'dsh-devops-headbtn',
+      'data-role': props.role,
+      'data-active': props.active ? 'true' : undefined,
+      'data-disabled': props.disabled ? 'true' : undefined,
+      title: props.title,
+      'aria-label': props.title,
+      disabled: props.disabled || undefined,
+      onClick: (e) => {
+        if (e && e.stopPropagation) e.stopPropagation();
+        if (!props.disabled && props.onClick) props.onClick();
+      },
+    },
+    props.icon ? h(Icon, { name: props.icon, size: 12 }) : null,
+    props.label ? h('span', null, props.label) : null,
+  );
+}
+
+/**
+ * 「就地新增阶段」入口。
+ * kind: 'gap'（列与列之间）| 'head'（列头）| 'end'（画布末尾追加）。
+ * data-index 表示插入位置（新阶段将落在该下标）。
+ */
+function AddStageButton(props) {
+  const label = props.label === undefined ? '阶段' : props.label;
+  return h(
+    'button',
+    {
+      type: 'button',
+      className: 'dsh-devops-addstage',
+      'data-role': 'add-stage',
+      'data-kind': props.kind,
+      'data-index': String(props.index),
+      'data-after-stage': props.afterStage || undefined,
+      title: props.title || '在此处插入新阶段',
+      'aria-label': props.title || '在此处插入新阶段',
+      onClick: (e) => {
+        if (e && e.stopPropagation) e.stopPropagation();
+        props.onClick();
+      },
+    },
+    h(Icon, { name: 'plus', size: 12 }),
+    label ? h('span', { className: 'dsh-devops-addstage-label' }, label) : null,
   );
 }
 
 /**
  * 画布。
- * props: { pipeline, onChange, selectedJob, onSelectJob, registerAddNode }
+ * props: { pipeline, onChange, selectedJob, onSelectJob, registerAddNode, toast }
  */
 function Canvas(props) {
   const pipeline = props.pipeline;
-  const [dragOverStage, setDragOverStage] = useState('');
-  const [draggingJob, setDraggingJob] = useState('');
-  const containerRef = useRef(null);
-  const [edgePaths, setEdgePaths] = useState([]);
-
   const stages = (pipeline && pipeline.stages) || [];
+
+  const [dragOver, setDragOver] = useState(null);
+  const [draggingJob, setDraggingJob] = useState('');
+  const [activeStage, setActiveStage] = useState('');
+  const [notice, setNotice] = useState('');
+  const [edgePaths, setEdgePaths] = useState([]);
+  const boardRef = useRef(null);
+  const dropRef = useRef(null);
+
+  /** 拖放目标同步写 ref：事件回调里不依赖可能过期的 state 闭包。 */
+  function setDrop(next) {
+    dropRef.current = next;
+    setDragOver(next);
+  }
+
+  function warn(text) {
+    setNotice(text);
+    if (props.toast && props.toast.warn) props.toast.warn(text);
+  }
 
   const jobIndex = useMemo(() => {
     const map = new Map();
@@ -2650,65 +4376,57 @@ function Canvas(props) {
     return map;
   }, [stages]);
 
-  /** 计算依赖边的贝塞尔路径：从上游卡片右侧到下游卡片左侧。 */
+  /** 计算依赖边：按列布局的卡片位置走线（不再假设左右相邻）。 */
   useEffect(() => {
     function recompute() {
-      const root = containerRef.current;
-      if (!root) return;
-      const rootRect = root.getBoundingClientRect();
+      const board = boardRef.current;
+      if (!board || typeof board.getBoundingClientRect !== 'function') return;
+      const base = board.getBoundingClientRect();
       const paths = [];
       for (const stage of stages) {
         for (const job of stage.jobs || []) {
           for (const need of job.needs || []) {
             if (!jobIndex.has(need)) continue;
-            const fromEl = root.querySelector('[data-job="' + cssEscape(need) + '"]');
-            const toEl = root.querySelector('[data-job="' + cssEscape(job.id) + '"]');
+            const fromEl = board.querySelector('[data-job="' + cssEscape(need) + '"]');
+            const toEl = board.querySelector('[data-job="' + cssEscape(job.id) + '"]');
             if (!fromEl || !toEl) continue;
-            const a = fromEl.getBoundingClientRect();
-            const b = toEl.getBoundingClientRect();
-            const x1 = a.right - rootRect.left + root.scrollLeft;
-            const y1 = a.top + a.height / 2 - rootRect.top + root.scrollTop;
-            const x2 = b.left - rootRect.left + root.scrollLeft;
-            const y2 = b.top + b.height / 2 - rootRect.top + root.scrollTop;
-            const dx = Math.max(30, Math.abs(x2 - x1) * 0.5);
-            paths.push({
-              key: need + '->' + job.id,
-              d: 'M' + x1 + ',' + y1 + ' C' + (x1 + dx) + ',' + y1 + ' ' + (x2 - dx) + ',' + y2 + ' ' + x2 + ',' + y2,
-            });
+            const built = buildEdgePath(rectOf(fromEl, base), rectOf(toEl, base));
+            paths.push({ key: need + '->' + job.id, d: built.d, kind: built.kind });
           }
         }
       }
       setEdgePaths(paths);
     }
     recompute();
-    const root = containerRef.current;
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(recompute) : null;
-    if (observer && root) observer.observe(root);
-    window.addEventListener('resize', recompute);
+    const board = boardRef.current;
+    const observer = typeof ResizeObserver !== 'undefined' && board ? new ResizeObserver(recompute) : null;
+    if (observer) observer.observe(board);
+    if (typeof window !== 'undefined') window.addEventListener('resize', recompute);
     const timer = setTimeout(recompute, 60);
     return () => {
       if (observer) observer.disconnect();
-      window.removeEventListener('resize', recompute);
+      if (typeof window !== 'undefined') window.removeEventListener('resize', recompute);
       clearTimeout(timer);
     };
-  }, [stages, jobIndex, props.selectedJob]);
+  }, [stages, jobIndex, props.selectedJob, activeStage]);
 
   /** 把节点加到指定阶段（若没有阶段则先建一个）。 */
   function addNodeToStage(descriptor, stageId) {
-    const next = JSON.parse(JSON.stringify(pipeline));
+    const next = clonePipeline(pipeline);
     next.stages = next.stages || [];
     if (next.stages.length === 0) {
       next.stages.push({ id: makeId('stage', []), name: '构建', parallel: false, jobs: [] });
     }
-    const stage = stageId ? next.stages.find((s) => s.id === stageId) : next.stages[next.stages.length - 1];
-    if (!stage) return;
+    const target = stageId
+      ? next.stages.find((s) => s.id === stageId)
+      : next.stages.find((s) => s.id === activeStage) || next.stages[next.stages.length - 1];
+    if (!target) return;
     const id = makeId((descriptor.type || 'step').split('.').pop(), collectJobIds(next));
-    stage.jobs = (stage.jobs || []).concat([newJob(id, descriptor)]);
+    target.jobs = (target.jobs || []).concat([newJob(id, descriptor)]);
     props.onChange(next);
-    props.onSelectJob && props.onSelectJob(id);
+    if (props.onSelectJob) props.onSelectJob(id);
   }
 
-  // 把「加节点」能力交给左侧面板；放到 effect 里避免每次渲染都重设。
   const addNodeRef = useRef(addNodeToStage);
   addNodeRef.current = addNodeToStage;
   useEffect(() => {
@@ -2717,53 +4435,120 @@ function Canvas(props) {
     }
   });
 
+  /** 移动节点（含跨阶段与列内插入到指定卡片之前）。 */
   function moveJob(jobId, fromStageId, toStageId, beforeJobId) {
-    if (fromStageId === toStageId && !beforeJobId) return;
-    const next = JSON.parse(JSON.stringify(pipeline));
-    let moved = null;
-    for (const stage of next.stages) {
-      if (stage.id !== fromStageId) continue;
-      const idx = (stage.jobs || []).findIndex((j) => j.id === jobId);
-      if (idx >= 0) moved = stage.jobs.splice(idx, 1)[0];
-    }
-    if (!moved) return;
+    const next = clonePipeline(pipeline);
+    next.stages = next.stages || [];
+    const from = next.stages.find((s) => s.id === fromStageId);
+    if (!from) return;
+    const fromIdx = (from.jobs || []).findIndex((j) => j.id === jobId);
+    if (fromIdx < 0) return;
+    const moved = from.jobs.splice(fromIdx, 1)[0];
     const target = next.stages.find((s) => s.id === toStageId);
-    if (!target) return;
+    if (!target) {
+      from.jobs.splice(fromIdx, 0, moved);
+      return;
+    }
     target.jobs = target.jobs || [];
-    if (beforeJobId) {
+    if (beforeJobId && beforeJobId !== jobId) {
       const at = target.jobs.findIndex((j) => j.id === beforeJobId);
       if (at >= 0) target.jobs.splice(at, 0, moved);
       else target.jobs.push(moved);
     } else {
       target.jobs.push(moved);
     }
+    // 同阶段且顺序未变则不提交（避免产生无意义的 onChange）
+    if (fromStageId === toStageId) {
+      const original = ((pipeline.stages || []).find((s) => s.id === fromStageId) || {}).jobs || [];
+      if (original.map((j) => j.id).join('|') === target.jobs.map((j) => j.id).join('|')) return;
+    }
     props.onChange(next);
   }
 
-  function addStage() {
-    const next = JSON.parse(JSON.stringify(pipeline));
-    next.stages = (next.stages || []).concat([
-      { id: makeId('stage', (next.stages || []).map((s) => s.id)), name: '新阶段 ' + ((next.stages || []).length + 1), parallel: false, jobs: [] },
-    ]);
+  /** 在指定下标插入阶段：默认 parallel:false（契约 §2.1 默认走阶段串行）。 */
+  function insertStage(index) {
+    const next = clonePipeline(pipeline);
+    next.stages = next.stages || [];
+    const at = Math.max(0, Math.min(typeof index === 'number' ? index : next.stages.length, next.stages.length));
+    const stage = {
+      id: makeId('stage', next.stages.map((s) => s.id)),
+      name: '新阶段 ' + (at + 1),
+      parallel: false,
+      jobs: [],
+    };
+    next.stages.splice(at, 0, stage);
     props.onChange(next);
+    setActiveStage(stage.id);
   }
 
   function updateStage(stageId, patch) {
-    const next = JSON.parse(JSON.stringify(pipeline));
-    const stage = next.stages.find((s) => s.id === stageId);
+    const next = clonePipeline(pipeline);
+    const stage = (next.stages || []).find((s) => s.id === stageId);
     if (!stage) return;
     Object.assign(stage, patch);
     props.onChange(next);
   }
 
+  /** 阶段「并行」开关：与 needs 冲突时阻止提交并提示（契约禁止混用）。 */
+  function toggleParallel(stage) {
+    if (!stage.parallel && pipelineHasNeeds(pipeline)) {
+      warn('这条流水线已有节点声明了 needs（DAG 调度），契约不允许再开启阶段并行。请先清除相关 needs。');
+      return;
+    }
+    updateStage(stage.id, { parallel: !stage.parallel });
+  }
+
+  /**
+   * 删除整个阶段：先二次确认，再在**同一份新对象**里清掉所有指向被删节点的 needs。
+   *
+   * 现状缺陷（用户原话「删除整个阶段没有确认，删除之后就炸了」）：
+   * 1. 全工程只有它没有确认框（删流水线/模板/服务器/环境变量组/自定义节点都有）。
+   * 2. 只 filter 阶段、不清理 needs，留下悬空依赖 → 校验报 missing-field、运行抛
+   *    「job j2 依赖了不存在的 job：j1」。
+   *
+   * browserConfirm 是模块级函数：浏览器里就是 window.confirm()；Node 测试环境里没有它
+   * （返回 undefined）即视为「已确认」，从而让既有用例仍能走到提交分支。
+   * 需要验证「取消不提交」时，用例把 globalThis.confirm 打成返回 false 即可。
+   */
   function removeStage(stageId) {
-    const next = JSON.parse(JSON.stringify(pipeline));
-    next.stages = next.stages.filter((s) => s.id !== stageId);
+    const stage = stages.find((s) => s.id === stageId);
+    if (!stage) return;
+
+    const removedIds = (stage.jobs || []).map((j) => j.id);
+    const dependents = [];
+    for (const s of stages) {
+      for (const job of s.jobs || []) {
+        if (removedIds.some((id) => (job.needs || []).includes(id))) dependents.push(job.id);
+      }
+    }
+
+    const parts = ['确定删除阶段「' + (stage.name || stage.id) + '」？'];
+    parts.push(removedIds.length ? '该阶段内 ' + removedIds.length + ' 个节点会被一并删除' : '该阶段内没有节点');
+    if (dependents.length) {
+      parts.push('；依赖这些节点的 ' + dependents.length + ' 个节点（' + dependents.join('、') + '）会自动移除相关 needs');
+    }
+    parts.push('。');
+
+    // 只有在确认框**明确返回 false** 时才取消；返回 undefined（无确认框的环境）视为已确认。
+    if (browserConfirm(parts.join('')) === false) return;
+
+    const next = clonePipeline(pipeline);
+    next.stages = (next.stages || []).filter((s) => s.id !== stageId);
+    const cleaned = cleanRemovedNeeds(next, removedIds);
+
+    // 同一次提交里提示清理结果；否则用户会以为依赖凭空消失。
+    if (cleaned > 0) warn('已删除阶段「' + (stage.name || stage.id) + '」，并清理了 ' + cleaned + ' 条指向被删节点的 needs。');
+
     props.onChange(next);
+
+    // 检查器不得停留在已不存在的节点上（否则右栏会显示一个幽灵节点）。
+    const selectedStillExists = removedIds.some((id) => props.selectedJob === id);
+    if (selectedStillExists && props.onSelectJob) props.onSelectJob(null);
   }
 
   function moveStage(stageId, delta) {
-    const next = JSON.parse(JSON.stringify(pipeline));
+    const next = clonePipeline(pipeline);
+    next.stages = next.stages || [];
     const idx = next.stages.findIndex((s) => s.id === stageId);
     const to = idx + delta;
     if (idx < 0 || to < 0 || to >= next.stages.length) return;
@@ -2772,124 +4557,243 @@ function Canvas(props) {
     props.onChange(next);
   }
 
+  function renameStage(stage) {
+    if (typeof prompt !== 'function') return;
+    const name = prompt('阶段名称', stage.name);
+    if (name) updateStage(stage.id, { name });
+  }
+
   const fallbackDescriptor = { type: 'shell.exec', title: '执行 Shell', fields: [{ name: 'script', default: '' }] };
 
-  return h(
-    'div',
-    { className: 'dsh-devops-canvas', ref: containerRef, onClick: () => props.onSelectJob && props.onSelectJob(null) },
-    h(
-      'svg',
-      { className: 'dsh-devops-edges', width: '100%', height: '100%' },
+  /** 渲染一列（阶段）。 */
+  function columnNode(stage, stageIndex) {
+    return h(
+      'div',
+      {
+        key: stage.id,
+        className: 'dsh-devops-column',
+        'data-role': 'stage-column',
+        'data-stage-id': stage.id,
+        'data-parallel': stage.parallel ? 'true' : undefined,
+        'data-active': activeStage === stage.id ? 'true' : undefined,
+        'data-drop': dragOver && dragOver.stageId === stage.id ? 'true' : undefined,
+        onClick: (e) => {
+          if (e && e.stopPropagation) e.stopPropagation();
+          setActiveStage(stage.id);
+        },
+      },
       h(
-        'defs',
-        null,
+        'div',
+        { className: 'dsh-devops-column-head' },
+        h('span', { className: 'dsh-devops-column-index' }, String(stageIndex + 1)),
         h(
-          'marker',
-          { id: 'dsh-devops-arrow', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 6, markerHeight: 6, orient: 'auto' },
-          h('path', { d: 'M0,0 L8,4 L0,8 z', fill: 'var(--dsw-alias-border-l4)' }),
+          'span',
+          {
+            className: 'dsh-devops-column-title dsh-devops-truncate',
+            title: '双击可改名',
+            onDoubleClick: (e) => {
+              if (e && e.stopPropagation) e.stopPropagation();
+              renameStage(stage);
+            },
+          },
+          stage.name || stage.id,
         ),
+        stage.parallel ? h(Chip, { tone: 'busy', title: '阶段内节点并行执行' }, '并行') : null,
+        h('span', { className: 'dsh-devops-hint' }, (stage.jobs || []).length + ' 节点'),
       ),
-      edgePaths.map((edge) =>
-        h('path', {
-          key: edge.key,
-          d: edge.d,
-          fill: 'none',
-          stroke: 'var(--dsw-alias-border-l4)',
-          strokeWidth: 1.2,
-          strokeDasharray: '4 3',
-          markerEnd: 'url(#dsh-devops-arrow)',
+      h(
+        'div',
+        { className: 'dsh-devops-column-tools' },
+        h(HeadButton, {
+          role: 'parallel-toggle',
+          icon: stage.parallel ? 'pause' : 'grid',
+          active: !!stage.parallel,
+          title: stage.parallel ? '关闭阶段并行' : '开启阶段并行（与 needs 不能混用）',
+          onClick: () => toggleParallel(stage),
         }),
+        h(HeadButton, {
+          role: 'stage-add-node',
+          icon: 'plus',
+          label: '节点',
+          title: '在此阶段添加一个 Shell 节点',
+          onClick: () => addNodeToStage(fallbackDescriptor, stage.id),
+        }),
+        h(AddStageButton, {
+          kind: 'head',
+          index: stageIndex + 1,
+          afterStage: stage.id,
+          title: '在此列右侧插入新阶段',
+          label: '阶段',
+          onClick: () => insertStage(stageIndex + 1),
+        }),
+        h('div', { className: 'dsh-devops-spacer' }),
+        h(HeadButton, { role: 'stage-move-prev', icon: 'chevron', title: '左移阶段', disabled: stageIndex === 0, onClick: () => moveStage(stage.id, -1) }),
+        h(HeadButton, {
+          role: 'stage-move-next',
+          icon: 'chevronDown',
+          title: '右移阶段',
+          disabled: stageIndex === stages.length - 1,
+          onClick: () => moveStage(stage.id, 1),
+        }),
+        h(HeadButton, { role: 'stage-remove', icon: 'trash', title: '删除阶段', onClick: () => removeStage(stage.id) }),
       ),
-    ),
-    stages.length === 0 ? h('div', { className: 'dsh-devops-empty' }, '还没有阶段：点左侧节点面板里的任意节点即可开始编排') : null,
-    stages.map((stage, stageIndex) =>
       h(
         'div',
         {
-          key: stage.id,
-          className: 'dsh-devops-lane',
-          'data-drop': dragOverStage === stage.id ? 'true' : undefined,
+          className: 'dsh-devops-column-cards',
+          'data-role': 'stage-cards',
           onDragOver: (e) => {
             e.preventDefault();
-            setDragOverStage(stage.id);
+            if (e.stopPropagation) e.stopPropagation();
+            setDrop({ stageId: stage.id, before: null });
           },
-          onDragLeave: () => setDragOverStage((cur) => (cur === stage.id ? '' : cur)),
+          onDragLeave: () => {
+            const cur = dropRef.current;
+            if (cur && cur.stageId === stage.id && !cur.before) setDrop(null);
+          },
           onDrop: (e) => {
             e.preventDefault();
-            setDragOverStage('');
+            if (e.stopPropagation) e.stopPropagation();
             const data = dragState.current;
-            if (data) moveJob(data.jobId, data.stageId, stage.id, null);
-          },
-          onDoubleClick: () => {
-            const name = prompt('阶段名称', stage.name);
-            if (name) updateStage(stage.id, { name });
+            const target = dropRef.current;
+            setDrop(null);
+            if (!data) return;
+            const before = target && target.stageId === stage.id ? target.before : null;
+            moveJob(data.jobId, data.stageId, stage.id, before);
           },
         },
-        h(
-          'div',
-          { className: 'dsh-devops-lane-head' },
-          h('span', { className: 'dsh-devops-lane-title' }, stage.name || stage.id),
-          h('span', { className: 'dsh-devops-hint' }, (stage.jobs || []).length + ' 个节点'),
-          stage.parallel ? h(Chip, { tone: 'busy' }, '并行') : null,
-          h('div', { className: 'dsh-devops-spacer' }),
-          h(Button, {
-            size: 'sm',
-            variant: 'ghost',
-            label: '并行',
-            active: !!stage.parallel,
-            title: '阶段内节点是否并行执行（与 needs 不能混用）',
-            onClick: () => updateStage(stage.id, { parallel: !stage.parallel }),
-          }),
-          h(Button, {
-            size: 'sm',
-            variant: 'ghost',
-            icon: 'plus',
-            title: '在此阶段添加一个 Shell 节点',
-            onClick: () => addNodeToStage(fallbackDescriptor, stage.id),
-          }),
-          h(Button, { size: 'sm', variant: 'ghost', icon: 'chevron', title: '上移阶段', onClick: () => moveStage(stage.id, -1), disabled: stageIndex === 0 }),
-          h(Button, {
-            size: 'sm',
-            variant: 'ghost',
-            icon: 'chevronDown',
-            title: '下移阶段',
-            onClick: () => moveStage(stage.id, 1),
-            disabled: stageIndex === stages.length - 1,
-          }),
-          h(Button, { size: 'sm', variant: 'ghost', icon: 'trash', title: '删除阶段', onClick: () => removeStage(stage.id) }),
+        (stage.jobs || []).map((job, jobIndexInStage) =>
+          h(
+            'div',
+            {
+              key: job.id,
+              className: 'dsh-devops-slot',
+              'data-job': job.id,
+              'data-drop-before':
+                dragOver && dragOver.stageId === stage.id && dragOver.before === job.id ? 'true' : undefined,
+              onDragOver: (e) => {
+                e.preventDefault();
+                if (e.stopPropagation) e.stopPropagation();
+                setDrop({ stageId: stage.id, before: job.id });
+              },
+              onDrop: (e) => {
+                e.preventDefault();
+                if (e.stopPropagation) e.stopPropagation();
+                const data = dragState.current;
+                const target = dropRef.current;
+                setDrop(null);
+                if (!data) return;
+                const before = target && target.stageId === stage.id ? target.before : job.id;
+                moveJob(data.jobId, data.stageId, stage.id, before);
+              },
+            },
+            h(NodeCard, {
+              job,
+              stageId: stage.id,
+              index: jobIndexInStage + 1,
+              selected: props.selectedJob === job.id,
+              dragging: draggingJob === job.id,
+              onSelect: props.onSelectJob,
+              onDragStart: setDraggingJob,
+              onDragEnd: () => setDraggingJob(''),
+            }),
+          ),
         ),
-        h(
+        (stage.jobs || []).length === 0 ? h('div', { className: 'dsh-devops-column-empty' }, '把节点拖到这里') : null,
+      ),
+    );
+  }
+
+  const boardChildren = [];
+  stages.forEach((stage, stageIndex) => {
+    boardChildren.push(columnNode(stage, stageIndex));
+    if (stageIndex < stages.length - 1) {
+      boardChildren.push(
+        h(AddStageButton, {
+          key: 'gap-' + stage.id,
+          kind: 'gap',
+          index: stageIndex + 1,
+          afterStage: stage.id,
+          title: '在这两列之间插入新阶段',
+          label: '插入阶段',
+          onClick: () => insertStage(stageIndex + 1),
+        }),
+      );
+    }
+  });
+  boardChildren.push(
+    h(AddStageButton, {
+      key: 'add-stage-end',
+      kind: 'end',
+      index: stages.length,
+      title: '在画布末尾追加一个阶段',
+      label: '添加阶段',
+      onClick: () => insertStage(stages.length),
+    }),
+  );
+
+  return h(
+    'div',
+    {
+      className: 'dsh-devops-canvas',
+      'data-role': 'canvas',
+      onClick: () => props.onSelectJob && props.onSelectJob(null),
+    },
+    notice
+      ? h(
           'div',
           {
-            className: 'dsh-devops-lane-cards',
-            onDragOver: (e) => e.preventDefault(),
-            onDrop: (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const data = dragState.current;
-              if (data) moveJob(data.jobId, data.stageId, stage.id, null);
-            },
+            className: 'dsh-devops-banner dsh-devops-canvas-notice',
+            'data-role': 'canvas-notice',
+            'data-tone': 'warn',
+            role: 'alert',
           },
-          (stage.jobs || []).map((job) =>
-            h(
-              'div',
-              { key: job.id, 'data-job': job.id },
-              h(NodeCard, {
-                job,
-                stageId: stage.id,
-                selected: props.selectedJob === job.id,
-                dragging: draggingJob === job.id,
-                onSelect: props.onSelectJob,
-                onDragStart: setDraggingJob,
-                onDragEnd: () => setDraggingJob(''),
-              }),
-            ),
+          h('span', null, notice),
+          h('button', { type: 'button', className: 'dsh-devops-link', onClick: () => setNotice('') }, '知道了'),
+        )
+      : null,
+    h(
+      'div',
+      { className: 'dsh-devops-board', 'data-role': 'board', ref: boardRef },
+      h(
+        'svg',
+        { className: 'dsh-devops-edges', width: '100%', height: '100%', 'aria-hidden': 'true' },
+        h(
+          'defs',
+          null,
+          h(
+            'marker',
+            { id: 'dsh-devops-arrow', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 6, markerHeight: 6, orient: 'auto' },
+            h('path', { d: 'M0,0 L8,4 L0,8 z', fill: 'var(--dsw-alias-border-l4)' }),
           ),
-          (stage.jobs || []).length === 0 ? h('span', { className: 'dsh-devops-hint' }, '拖节点到这里') : null,
+        ),
+        edgePaths.map((edge) =>
+          h('path', {
+            key: edge.key,
+            'data-edge-kind': edge.kind,
+            d: edge.d,
+            fill: 'none',
+            stroke: 'var(--dsw-alias-border-l4)',
+            strokeWidth: 1.2,
+            strokeDasharray: '4 3',
+            markerEnd: 'url(#dsh-devops-arrow)',
+          }),
         ),
       ),
+      stages.length === 0
+        ? h(
+            'div',
+            { className: 'dsh-devops-empty dsh-devops-board-empty', 'data-role': 'canvas-empty' },
+            '还没有阶段：点右侧「添加阶段」，或直接点左侧节点面板里的任意节点开始编排。',
+            h(
+              'div',
+              { style: { marginTop: '6px' } },
+              '注意：当前没有可运行的节点，直接点「运行」会被拒绝（引擎会报「流水线不可执行：没有任何 job」）。',
+            ),
+          )
+        : null,
+      boardChildren,
     ),
-    h('div', { style: { display: 'flex', gap: '8px', marginTop: '4px' } }, h(Button, { size: 'sm', icon: 'plus', label: '添加阶段', onClick: addStage })),
   );
 }
 
@@ -2898,11 +4802,21 @@ function cssEscape(value) {
   return String(value).replace(/["\\]/g, '\\$&');
 }
 
+/** 声明式能力标志：消费方（如详情页）据此决定是否复用本组件做只读卡片。 */
+NodeCard.supportsReadonly = true;
+
 exports.Canvas = Canvas;
 exports.NodeCard = NodeCard;
+exports.AddStageButton = AddStageButton;
+exports.HeadButton = HeadButton;
 exports.makeId = makeId;
 exports.newJob = newJob;
 exports.collectJobIds = collectJobIds;
+exports.pipelineHasNeeds = pipelineHasNeeds;
+exports.cleanRemovedNeeds = cleanRemovedNeeds;
+exports.buildEdgePath = buildEdgePath;
+exports.clonePipeline = clonePipeline;
+exports.rectOf = rectOf;
 });
 
 __def("./ai.js", function (module, exports, require) {
@@ -3152,6 +5066,21 @@ const { Canvas, makeId } = require('./canvas.js');
 const { AiButton, buildPipelinePrompt } = require('./ai.js');
 const { api } = require('./api.js');
 
+/** 检查器宽度约束（px）：可拖拽区间与默认值（「流水线设置」侧栏用）。 */
+const INSPECTOR_MIN = 260;
+const INSPECTOR_MAX = 720;
+const INSPECTOR_DEFAULT = 360;
+
+/**
+ * 节点编辑浮层宽度（px）：默认取用户要求的舒适区间（420~520），
+ * 并可拖拽左边缘调宽（保留用户上轮要过的「可拉宽」能力，但不是主要交互）。
+ */
+const SHEET_MIN = 320;
+const SHEET_MAX = 1100;
+// 默认宽度调大：用户反馈「编辑框默认要更宽一点」——460px 下字段名与控件挤在一起，
+// 长脚本也看不清。620px 能舒服放下标签+输入，同时不遮住画布内容。
+const SHEET_DEFAULT = 620;
+
 const CATEGORY_TEXT = {
   execute: '执行',
   file: '文件',
@@ -3198,7 +5127,7 @@ function Palette(props) {
     h(
       'div',
       { className: 'dsh-devops-palette-scroll' },
-      h('div', { className: 'dsh-devops-hint', style: { margin: '4px 2px 6px' } }, '点击节点加入画布（加入最后/选中阶段）'),
+      h('div', { className: 'dsh-devops-hint', style: { margin: '4px 2px 6px' } }, '点击节点加入画布（加入选中的列，否则放入最后一列）'),
       filtered.map(([cat, list]) =>
         h(
           'div',
@@ -3283,6 +5212,22 @@ function Inspector(props) {
     return h(
       'div',
       { className: 'dsh-devops-inspector' },
+      props.hideHead ? null : h(
+      'div',
+      { className: 'dsh-devops-inspector-head' },
+      h('span', { className: 'dsh-devops-inspector-head-title' }, '流水线设置'),
+      h('div', { className: 'dsh-devops-spacer' }),
+      props.onCollapse
+        ? h(Button, {
+            size: 'sm',
+            variant: 'ghost',
+            icon: 'chevron',
+            'data-role': 'inspector-collapse',
+            title: '收起检查器',
+            onClick: props.onCollapse,
+          })
+        : null,
+    ),
       h(
         'div',
         { className: 'dsh-devops-inspector-scroll' },
@@ -3361,6 +5306,23 @@ function Inspector(props) {
   return h(
     'div',
     { className: 'dsh-devops-inspector' },
+    props.hideHead ? null : h(
+      'div',
+      { className: 'dsh-devops-inspector-head' },
+      h('span', { className: 'dsh-devops-inspector-head-title dsh-devops-truncate' }, node ? node.title || job.node : job.node),
+      h('span', { className: 'dsh-devops-tag dsh-devops-monospace' }, job.id),
+      h('div', { className: 'dsh-devops-spacer' }),
+      props.onCollapse
+        ? h(Button, {
+            size: 'sm',
+            variant: 'ghost',
+            icon: 'chevron',
+            'data-role': 'inspector-collapse',
+            title: '收起检查器',
+            onClick: props.onCollapse,
+          })
+        : null,
+    ),
     h(
       'div',
       { className: 'dsh-devops-inspector-scroll' },
@@ -3431,7 +5393,7 @@ function Inspector(props) {
                   field,
                   value: values[field.name],
                   onChange: (v) => setField(field.name, v),
-                  ctx: props.ctx,
+                  ctx: props.fieldCtx,
                   serverId: job.server || (props.pipeline.defaults && props.pipeline.defaults.server),
                   resolveServer: (serverField) => {
                     if (!serverField) return job.server || (props.pipeline.defaults && props.pipeline.defaults.server);
@@ -3626,6 +5588,166 @@ function RunModal(props) {
  * 编辑器主体。
  * props: { pipeline, onChange, nodes, servers, ctx, toast, onSave, onRun, onReload, recent, remember }
  */
+
+/**
+ * 节点编辑浮层：**覆盖在编排画布之上**的圆角卡片，而不是占一栏的固定检查器。
+ *
+ * 用户要求（原话）：「点击节点之后虚化背景……去点击编辑层之外的地方，
+ * 编辑窗口会自动保存内容收起来。」因此：
+ *  - 有选中节点时浮出（遮罩虚化 + elevation 阴影），**覆盖而非挤压**画布；
+ *  - 点浮层外部（遮罩）→ 先提交/保存再收起；Esc 同样关闭；
+ *  - 浮层内沿用 Inspector 的全部字段控件，不丢任何编辑能力；
+ *  - 左边缘可拖拽调宽（附加能力；默认 SHEET_DEFAULT，用户不需要拉也能用）。
+ *
+ * 与「查看节点信息」（详情页只读抽屉）区分：这里是**可编辑**的编排浮层。
+ */
+function NodeEditSheet(props) {
+  const job = props.job || null;
+  const open = !!job;
+  const [width, setWidth] = useState(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('dsh-devops.sheetWidth')) : 0;
+      return saved >= SHEET_MIN && saved <= SHEET_MAX ? saved : SHEET_DEFAULT;
+    } catch {
+      return SHEET_DEFAULT;
+    }
+  });
+  const dragRef = useRef(null);
+
+  function persistWidth(value) {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem('dsh-devops.sheetWidth', String(Math.round(value)));
+    } catch {
+      /* 隐私模式等场景存不了，忽略 */
+    }
+  }
+
+  /** 左边缘拖拽：向左拖变宽（浮层贴右侧）。 */
+  function startResize(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (event && event.stopPropagation) event.stopPropagation();
+    const startX = event && event.clientX !== undefined ? event.clientX : 0;
+    const startWidth = width;
+    let latest = startWidth;
+    dragRef.current = { startX, startWidth };
+    const onMove = (e) => {
+      const x = e && e.clientX !== undefined ? e.clientX : startX;
+      const next = Math.max(SHEET_MIN, Math.min(SHEET_MAX, startWidth - (x - startX)));
+      latest = next;
+      setWidth(next);
+    };
+    const onUp = () => {
+      if (typeof window === 'undefined') return;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      // 抬手时才落盘，避免拖动过程中反复写 localStorage
+      persistWidth(latest);
+      dragRef.current = null;
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+  }
+
+  // Esc 关闭（与点外部同一条路径：先保存再收起）
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const onKey = (event) => {
+      if (event && event.key === 'Escape' && props.onClose) props.onClose('esc');
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      if (document && document.removeEventListener) document.removeEventListener('keydown', onKey);
+    };
+  }, [open, props.onClose]);
+
+  return h(
+    'div',
+    {
+      className: 'dsh-devops-editor-sheet-layer',
+      'data-role': 'node-edit-layer',
+      // 浮层形态：覆盖画布，不挤压布局
+      'data-shape': 'floating',
+      'data-open': open ? 'true' : 'false',
+      'aria-hidden': open ? 'false' : 'true',
+    },
+    // 遮罩：背景虚化；点它就是「点编辑层之外」→ 自动保存并收起
+    h('div', {
+      className: 'dsh-devops-editor-sheet-mask',
+      'data-role': 'node-edit-mask',
+      'data-blur': 'true',
+      onClick: () => props.onClose && props.onClose('mask'),
+    }),
+    h(
+      'aside',
+      {
+        className: 'dsh-devops-editor-sheet',
+        'data-role': 'node-edit-sheet',
+        'data-variant': 'floating',
+        style: { width: width + 'px' },
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-label': '编辑节点',
+        onClick: (event) => {
+          // 点浮层内部不应关闭
+          if (event && event.stopPropagation) event.stopPropagation();
+        },
+      },
+      // 左边缘拖拽手柄（附加能力）
+      h('div', {
+        className: 'dsh-devops-editor-sheet-resizer',
+        'data-role': 'node-edit-resizer',
+        title: '拖拽调整浮层宽度',
+        onMouseDown: startResize,
+      }),
+      h(
+        'div',
+        { className: 'dsh-devops-editor-sheet-head' },
+        h('span', { className: 'dsh-devops-editor-sheet-title dsh-devops-truncate' },
+          job ? (job.name || job.id) : ''),
+        job ? h('span', { className: 'dsh-devops-tag dsh-devops-monospace' }, job.node) : null,
+        h('div', { className: 'dsh-devops-spacer' }),
+        h(Button, {
+          size: 'sm',
+          variant: 'ghost',
+          icon: 'close',
+          label: '完成',
+          'data-role': 'node-edit-close',
+          title: '保存并收起（Esc）',
+          onClick: () => props.onClose && props.onClose('button'),
+        }),
+      ),
+      h(
+        'div',
+        { className: 'dsh-devops-editor-sheet-body' },
+        open
+          ? h(Inspector, {
+              job: props.job,
+              node: props.node,
+              pipeline: props.pipeline,
+              servers: props.servers,
+              ctx: props.ctx,
+              fieldCtx: props.fieldCtx,
+              toast: props.toast,
+              onPatchJob: props.onPatchJob,
+              onPatchPipeline: props.onPatchPipeline,
+              onReload: props.onReload,
+              recent: props.recent,
+              remember: props.remember,
+              hideHead: true,
+            })
+          : null,
+      ),
+      h(
+        'div',
+        { className: 'dsh-devops-editor-sheet-foot' },
+        h('span', { className: 'dsh-devops-hint' }, '改动已即时保存；点浮层外部或按 Esc 收起'),
+      ),
+    ),
+  );
+}
+
 function PipelineEditor(props) {
   const pipeline = props.pipeline;
   const [selectedJob, setSelectedJob] = useState(null);
@@ -3635,12 +5757,87 @@ function PipelineEditor(props) {
   const [busy, setBusy] = useState(false);
   const addNodeRef = useRef(null);
 
+  /**
+   * 检查器宽度：可拖拽调整并持久化到 localStorage。
+   * 用户抱怨「这么窄一个，拉也不能拉宽」——右侧面板固定 288px 且不可调，
+   * 写长脚本时完全不够用，因此这里给出可拖拽的边缘 + 收起/展开。
+   */
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('dsh-devops.inspectorWidth')) : 0;
+      return saved >= INSPECTOR_MIN && saved <= INSPECTOR_MAX ? saved : INSPECTOR_DEFAULT;
+    } catch {
+      return INSPECTOR_DEFAULT;
+    }
+  });
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const dragRef = useRef(null);
+
+  /**
+   * 本页自管滚动：挂载时告诉宿主「body 不要再整页滚」（app.js 的 onBodyFlush），
+   * 卸载时恢复。否则子区域拿不到有界高度，画布的横向滚动条会被推到页面底部。
+   */
+  useEffect(() => {
+    if (typeof props.onBodyFlush !== 'function') return undefined;
+    props.onBodyFlush(true);
+    return () => props.onBodyFlush(false);
+  }, [props.onBodyFlush]);
+  /**
+   * 本次浮层会话里是否发生过编辑。
+   * 字段控件是「改一次提交一次」（props.onChange 直接写上层 draft），
+   * 所以关闭时内容本来就不会丢；这里额外记一笔，用于关闭时做一次显式的
+   * **最终提交（flush）**，把「点外部 = 自动保存并收起」落成可观察的行为。
+   */
+  const sheetDirtyRef = useRef(false);
+
+  function persistWidth(width) {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem('dsh-devops.inspectorWidth', String(Math.round(width)));
+    } catch {
+      /* 隐私模式等场景下存不了，忽略即可 */
+    }
+  }
+
+  /** 拖拽分隔条：向左拖变宽、向右拖变窄（面板在右侧）。 */
+  function startResize(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    const startX = event && event.clientX !== undefined ? event.clientX : 0;
+    const startWidth = inspectorWidth;
+    dragRef.current = { startX, startWidth };
+
+    const onMove = (e) => {
+      const x = e && e.clientX !== undefined ? e.clientX : startX;
+      const next = Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, startWidth - (x - startX)));
+      setInspectorWidth(next);
+    };
+    const onUp = () => {
+      if (typeof window === 'undefined') return;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      dragRef.current = null;
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+  }
+
+  /** 双击分隔条：在默认宽度与最大化之间切换（快捷操作）。 */
+  function toggleWide() {
+    const next = inspectorWidth >= INSPECTOR_MAX - 20 ? INSPECTOR_DEFAULT : INSPECTOR_MAX;
+    setInspectorWidth(next);
+    persistWidth(next);
+  }
+
   const jobIndex = useMemo(() => {
     const map = new Map();
     for (const stage of (pipeline.stages || [])) for (const job of stage.jobs || []) map.set(job.id, job);
     return map;
   }, [pipeline]);
 
+  // 删除阶段（或节点）后，原来的 selectedJob 可能已不在 jobIndex 里。
+  // 这里天然安全降级：selected 为 null → Inspector 回落到「流水线设置」，
+  // 顶部也不会再对一个不存在的节点显示「复制/删除节点」。不要改成抛错或保留旧对象。
   const selected = selectedJob ? jobIndex.get(selectedJob) : null;
   const selectedNode = selected ? (props.nodes || []).find((n) => n.type === selected.node) : null;
 
@@ -3649,12 +5846,41 @@ function PipelineEditor(props) {
   }
 
   function patchJob(patch) {
+    // 契约 §2.1：needs（DAG 调度）与阶段 parallel 不得混用。
+    // 画布侧已拦住「先有 needs 再开并行」，这里补上反方向：已有并行阶段时不再允许新增 needs。
+    if (patch.needs && patch.needs.length) {
+      const parallelStage = (pipeline.stages || []).find((s) => s.parallel);
+      if (parallelStage) {
+        props.toast.warn(
+          '阶段「' + (parallelStage.name || parallelStage.id) + '」已开启并行，契约不允许再声明 needs（DAG 调度）。请先关闭该阶段的并行。',
+        );
+        return;
+      }
+    }
     const next = clone(pipeline);
     for (const stage of next.stages || []) {
       const idx = (stage.jobs || []).findIndex((j) => j.id === selectedJob);
       if (idx >= 0) stage.jobs[idx] = Object.assign(stage.jobs[idx], patch);
     }
+    sheetDirtyRef.current = true;
     props.onChange(next);
+  }
+
+  /**
+   * 收起编辑浮层。用户要求「点编辑层之外 → 自动保存内容收起来」：
+   * 字段改动本来就是逐次通过 props.onChange 提交的（上层会写进 draft），
+   * 这里再做一次「落定」——把当前 pipeline 交给 onSave 的轻量提交路径前先保证
+   * 没有未提交的本地草稿；同时把浮层状态清空，回到纯画布视图。
+   */
+  function closeSheet(reason) {
+    // 点浮层外部 / Esc / 点「完成」都走这里：
+    // 有过编辑就做一次最终提交（flush），保证「自动保存」而不是「丢弃」。
+    if (sheetDirtyRef.current) {
+      props.onChange(clone(pipeline));
+      sheetDirtyRef.current = false;
+    }
+    setSelectedJob(null);
+    if (props.onSheetClose) props.onSheetClose(reason || 'close');
   }
 
   function deleteJob() {
@@ -3755,11 +5981,13 @@ function PipelineEditor(props) {
       }),
       h(
         'div',
-        { style: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 } },
+        // minHeight:0 必须显式给：flex 子项默认 min-height:auto 会拒绝收缩，
+        // 画布会被内容撑高、自身 overflow:auto 失效（横向滚动条被推到页面底部够不着）。
+        { style: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 } },
         h(
           'div',
           { className: 'dsh-devops-statusbar-inline' },
-          h('span', null, '拖拽节点调整顺序或换阶段；双击泳道标题可改名'),
+          h('span', null, '横向编排：阶段是列，节点在列内自上而下；拖拽可换列换序，双击列标题改名，列头或列间可插入新阶段'),
           h('div', { className: 'dsh-devops-spacer' }),
           selected
             ? h(
@@ -3770,30 +5998,89 @@ function PipelineEditor(props) {
               )
             : null,
         ),
+        // 0 节点：保存能成功、validate 也返回 ok（校验口径不看 job 数量），
+        // 但引擎在 prepareGraph 里会抛「流水线不可执行：没有任何 job」。
+        // 前端必须先把这条预判说清楚，避免用户到点「运行」那一刻才发现。
+        countJobs(pipeline) === 0
+          ? h(
+              Banner,
+              { tone: 'warn' },
+              '当前没有可运行的节点：保存与校验都会通过，但点「运行」会被拒绝（引擎报「流水线不可执行：没有任何 job」）。请先在左侧节点面板添加节点。',
+            )
+          : null,
         h(Canvas, {
           pipeline,
           onChange: props.onChange,
           selectedJob,
           onSelectJob: setSelectedJob,
+          toast: props.toast,
           registerAddNode: (fn) => {
             addNodeRef.current = fn;
           },
         }),
       ),
-      h(Inspector, {
-        job: selected,
-        node: selectedNode,
-        pipeline,
-        servers: props.servers,
-        ctx: props.ctx,
-        toast: props.toast,
-        onPatchJob: patchJob,
-        onPatchPipeline: patchPipeline,
-        onReload: props.onReload,
-        recent: props.recent,
-        remember: props.remember,
+      // 可拖拽的分隔条：向左拖宽检查器（右侧面板），双击在默认/最大化间切换。
+      // 注意：选中节点时**不占用这一栏** —— 编辑走覆盖画布的浮层（见下方 NodeEditSheet），
+      // 这一栏只在「没有选中节点」（流水线设置）时保留。
+      h('div', {
+        className: 'dsh-devops-inspector-resizer',
+        'data-role': 'inspector-resizer',
+        'data-open': !selected && inspectorOpen ? 'true' : 'false',
+        title: '拖拽调整宽度，双击在默认/最大化之间切换',
+        onMouseDown: startResize,
+        onDoubleClick: toggleWide,
       }),
+      !selected && inspectorOpen
+        ? h('div', { className: 'dsh-devops-inspector-host', style: { width: inspectorWidth + 'px' } },
+            h(Inspector, {
+              job: null,
+              node: null,
+              pipeline,
+              servers: props.servers,
+              ctx: props.ctx,
+              fieldCtx: props.fieldCtx,
+              toast: props.toast,
+              onPatchJob: patchJob,
+              onPatchPipeline: patchPipeline,
+              onReload: props.onReload,
+              recent: props.recent,
+              remember: props.remember,
+              onCollapse: () => setInspectorOpen(false),
+            }))
+        : null,
+      !selected && !inspectorOpen
+        ? h('div', { className: 'dsh-devops-inspector-rail' },
+            h(Button, {
+              size: 'sm',
+              variant: 'ghost',
+              icon: 'chevron',
+              className: 'dsh-devops-inspector-toggle',
+              'data-role': 'inspector-toggle',
+              title: '展开检查器',
+              onClick: () => setInspectorOpen(true),
+            }))
+        : null,
     ),
+    // 节点编辑浮层：覆盖在画布之上（不挤压布局），点外部/Esc 自动保存并收起。
+    // 只在选中节点时挂载 —— 收起后浮层与遮罩都不留在 DOM 里，
+    // 避免一个隐藏的遮罩常驻并拦截画布点击。
+    selected
+      ? h(NodeEditSheet, {
+          job: selected,
+          node: selectedNode,
+          pipeline,
+          servers: props.servers,
+          ctx: props.ctx,
+          fieldCtx: props.fieldCtx,
+          toast: props.toast,
+          onPatchJob: patchJob,
+          onPatchPipeline: patchPipeline,
+          onReload: props.onReload,
+          recent: props.recent,
+          remember: props.remember,
+          onClose: closeSheet,
+        })
+      : null,
     templateOpen ? h(TemplateModal, { pipeline, toast: props.toast, onClose: () => setTemplateOpen(false), onSaved: props.onTemplatesChanged }) : null,
     runOpen ? h(RunModal, { pipeline, toast: props.toast, onClose: () => setRunOpen(false), onStarted: props.onStarted }) : null,
   );
@@ -3999,12 +6286,117 @@ exports.Overview = Overview;
 
 __def("./page-pipelines.js", function (module, exports, require) {
 /**
- * 流水线页：列表 + 编辑器。
+ * 流水线页：列表 + 详情 + 编辑器。
+ *
+ * 本次修复的可用性缺陷：
+ *  - 列表里的流水线名过去是纯文本 span，看着像入口却点不动。现在名称是
+ *    .dsh-devops-link 可点元素（role=button + 键盘可达），点击进入**详情**。
+ *  - 新增详情视图：定义概览、阶段与节点、最近运行，以及「编辑」「运行」入口。
+ *    详情里的「编辑」复用 app.js 的 navigate('pipelines', { edit: id }) 机制。
  */
-const { h, useState, useEffect, useMemo, clone, fmtAgo } = require('./h.js');
+const { h, useState, useEffect, useMemo, clone, fmtAgo, fmtTime, fmtDuration } = require('./h.js');
 const { Button, TextInput, Select, Card, Empty, Chip, Banner, Modal, Field, KV } = require('./ui.js');
 const { api } = require('./api.js');
 const { PipelineEditor, detectScheduling, countJobs } = require('./editor.js');
+const { LogPanel } = require('./logs.js');
+/**
+ * 只读编排视图复用画布的纯展示构件（NodeCard）。
+ * canvas.js 归画布任务维护，这里只读引用；require 失败时降级为内置只读卡片，
+ * 保证详情页在缺该模块（或测试用桩表未覆盖它）时仍然可用。
+ */
+let canvasModule = {};
+try {
+  canvasModule = require('./canvas.js') || {};
+} catch (error) {
+  canvasModule = {};
+}
+const { RUN_STATUS_TEXT, runTone } = require('./state.js');
+
+/* ------------------------------------------------------------------ *
+ * 视图记忆：离开 DevOps 界面再回来时恢复「视图位置」
+ *
+ * 背景：面板随侧边栏 slot 卸载，组件内 useState 全部清零，用户重进时
+ * 会从列表/概览重新开始。这里把「视图位置」存进 sessionStorage，重进时
+ * 按 id **重新取数据**恢复——绝不存整份流水线定义，避免显示过期内容。
+ *
+ * 键名与 app.js 的 VIEW_KEY 一致：app.js 未导出这套 helper（改它归属 Lead），
+ * 且 app.js 已 require 本文件，反向 require 会成环；故此处按同一约定实现，
+ * 读写同一份记忆、同一套合并语义。
+ * ------------------------------------------------------------------ */
+const VIEW_KEY = 'dsh-devops.view';
+
+/** 安全读取视图记忆（隐私模式 / 无 storage / JSON 损坏时一律降级为 null）。 */
+function readViewState() {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(VIEW_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 安全写入视图记忆（合并既有值；存不了不影响功能）。 */
+function writeViewState(patch) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    const current = readViewState() || {};
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify(Object.assign({}, current, patch)));
+  } catch {
+    /* 隐私模式等场景存不了，忽略即可 */
+  }
+}
+
+/** 重置流水线页的视图记忆（回到列表；用户「退出某个状态」的出口）。 */
+function resetPipelineView() {
+  writeViewState({ pipelinesMode: 'list', pipelinesId: '', editPipelineId: '' });
+}
+
+/**
+ * 解析流水线页要恢复的视图位置（纯函数，便于断言）。
+ * 只认轻量标记：mode 仅 list|edit|detail，id 必须是非空字符串；
+ * 任何非法/缺失组合一律降级为列表，绝不抛出。
+ */
+function resolvePipelineView(remembered) {
+  const view = remembered && typeof remembered === 'object' ? remembered : null;
+  if (!view) return { mode: 'list', id: '' };
+  const mode = view.pipelinesMode === 'edit' || view.pipelinesMode === 'detail' ? view.pipelinesMode : 'list';
+  const primary = typeof view.pipelinesId === 'string' && view.pipelinesId ? view.pipelinesId : '';
+  const fallback = mode === 'edit' && typeof view.editPipelineId === 'string' ? view.editPipelineId : '';
+  const id = primary || fallback || '';
+  // mode 与 id 必须成对有效：mode 已降级为 list 时 id 一并清空，
+  // 否则调用方可能拿一个陈旧 id 去做别的事。
+  if (mode === 'list' || !id) return { mode: 'list', id: '' };
+  return { mode, id };
+}
+
+/**
+ * 按视图位置重新取数据（只按 id 现取，不读记忆里可能过期的数据）。
+ * 返回 { ok:true, pipeline } 或 { ok:false, missing:true, message }，**绝不抛错**——
+ * 目标已被删除时必须能优雅降级回列表，而不是白屏。
+ */
+async function loadPipelineForView(view, getPipeline) {
+  const id = view && view.id;
+  if (!id || typeof getPipeline !== 'function') return { ok: false, missing: true, message: '' };
+  try {
+    const pipeline = await getPipeline(id);
+    if (!pipeline || !pipeline.id) return { ok: false, missing: true, message: '流水线不存在：' + id };
+    return { ok: true, pipeline };
+  } catch (error) {
+    return { ok: false, missing: true, message: (error && error.message) || String(error) };
+  }
+}
+
+/** 解析流水线列表的筛选状态（只认标量，非法值降级为空）。 */
+function resolveListFilters(remembered) {
+  const view = remembered && typeof remembered === 'object' ? remembered : null;
+  return {
+    keyword: view && typeof view.listKeyword === 'string' ? view.listKeyword : '',
+    category: view && typeof view.listCategory === 'string' ? view.listCategory : '',
+  };
+}
 
 /** 新建流水线时用的骨架，字段与契约 §2.1 对齐。 */
 function blankPipeline() {
@@ -4026,10 +6418,109 @@ function blankPipeline() {
   };
 }
 
+/** 该流水线是否有活跃运行（列表里给「运行中」提示用）。 */
+function activeRunOf(runs, pipelineId) {
+  return (runs || []).find(
+    (r) => r && r.pipelineId === pipelineId && (r.status === 'running' || r.status === 'queued'),
+  );
+}
+
+/**
+ * 名称单元格：可点进详情，并在有活跃运行时补一个「运行中」徽标。
+ *
+ * 状态表达（task-8）：左侧状态点与失败计数都用 data-tone 驱动，
+ * 组件里不写死任何色值 —— 颜色由 styles.js 的 .dsh-devops-dot[data-tone] 决定。
+ */
+function PipelineNameCell(props) {
+  const pipeline = props.pipeline;
+  const name = pipeline.name || '（未命名）';
+  const active = props.activeRun;
+  const recent = props.recentRun || null;
+  const failedCount = props.failedCount || 0;
+  const tone = active ? 'busy' : recent ? runTone(recent.status) : 'idle';
+  const toneText = active
+    ? RUN_STATUS_TEXT.running
+    : recent
+      ? RUN_STATUS_TEXT[recent.status] || recent.status
+      : '还没有运行';
+  return h(
+    'span',
+    { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
+    h('span', {
+      className: 'dsh-devops-dot',
+      'data-tone': tone,
+      'data-role': 'pipeline-status-dot',
+      title: '最近状态：' + toneText,
+    }),
+    h(
+      'span',
+      {
+        className: 'dsh-devops-link',
+        style: { fontWeight: 500 },
+        role: 'button',
+        tabIndex: 0,
+        title: '查看「' + name + '」的详情与运行情况',
+        onClick: () => props.onOpen(pipeline.id),
+        onKeyDown: (event) => {
+          if (event && (event.key === 'Enter' || event.key === ' ')) {
+            if (event.preventDefault) event.preventDefault();
+            props.onOpen(pipeline.id);
+          }
+        },
+      },
+      name,
+    ),
+    active
+      ? h(Chip, { tone: 'busy', dot: true, title: '该流水线正在运行：' + active.id }, '运行中')
+      : null,
+    failedCount > 0
+      ? h(
+          Chip,
+          { tone: 'error', dot: true, title: '最近运行中有 ' + failedCount + ' 次失败' },
+          failedCount + ' 次失败',
+        )
+      : null,
+  );
+}
+
+/**
+ * 按流水线汇总「最近一次运行」与「失败计数」，供列表用状态色表达。
+ * 纯函数，缺 runs 时返回空表 —— 列表在没有运行数据时仍然是中性的。
+ */
+function runSummaryByPipeline(runs) {
+  const out = {};
+  for (const r of runs || []) {
+    if (!r || !r.pipelineId) continue;
+    const entry = out[r.pipelineId] || (out[r.pipelineId] = { latest: null, failed: 0 });
+    if (!entry.latest || (r.startedAt || 0) > (entry.latest.startedAt || 0)) entry.latest = r;
+    if (r.status === 'failed') entry.failed += 1;
+  }
+  return out;
+}
+
 function PipelineList(props) {
   const pipelines = props.pipelines || [];
-  const [keyword, setKeyword] = useState('');
-  const [category, setCategory] = useState('');
+  // 筛选条件也属于「视图位置」：离开再回来时保留搜索词与分类。
+  const filters = resolveListFilters(props.remembered !== undefined ? props.remembered : readViewState());
+  const [keyword, setKeyword] = useState(filters.keyword);
+  const [category, setCategory] = useState(filters.category);
+  const summaries = useMemo(() => runSummaryByPipeline(props.runs), [props.runs]);
+
+  /**
+   * 筛选条件变化即写入记忆（只存标量，不存列表数据）。
+   *
+   * 只写「本次变化的那一项」，由 writeViewState 与已存值合并；
+   * 不可用 filters（派生自 props.remembered 的挂载快照）当基线，
+   * 否则改分类会把刚输入的关键字覆盖回空值。
+   */
+  function patchFilter(patch) {
+    const next = {};
+    if (patch.keyword !== undefined) next.listKeyword = patch.keyword || '';
+    if (patch.category !== undefined) next.listCategory = patch.category || '';
+    writeViewState(next);
+    if (patch.keyword !== undefined) setKeyword(patch.keyword);
+    if (patch.category !== undefined) setCategory(patch.category);
+  }
 
   const categories = useMemo(() => {
     const set = new Set();
@@ -4050,13 +6541,13 @@ function PipelineList(props) {
     h(
       'div',
       { style: { display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center' } },
-      h('div', { style: { width: '220px' } }, h(TextInput, { value: keyword, placeholder: '搜索名称/描述/标签', onChange: setKeyword })),
+      h('div', { style: { width: '220px' } }, h(TextInput, { value: keyword, placeholder: '搜索名称/描述/标签', onChange: (v) => patchFilter({ keyword: v }) })),
       h('div', { style: { width: '150px' } },
         h(Select, {
           value: category,
           placeholder: '全部分类',
           options: categories,
-          onChange: setCategory,
+          onChange: (v) => patchFilter({ category: v }),
         })),
       h('div', { className: 'dsh-devops-spacer' }),
       h(Button, { size: 'sm', icon: 'plus', label: '新建流水线', variant: 'primary', onClick: props.onCreate }),
@@ -4080,7 +6571,13 @@ function PipelineList(props) {
           h('tbody', null,
             filtered.map((p) =>
               h('tr', { key: p.id },
-                h('td', null, h('span', { style: { fontWeight: 500 } }, p.name || '（未命名）')),
+                h('td', null, h(PipelineNameCell, {
+                  pipeline: p,
+                  activeRun: (props.activeRunsByPipeline || {})[p.id],
+                  recentRun: (summaries[p.id] || {}).latest || null,
+                  failedCount: (summaries[p.id] || {}).failed || 0,
+                  onOpen: props.onOpen,
+                })),
                 h('td', { className: 'dsh-devops-monospace' }, p.id),
                 h('td', null, (p.stages || []).length + ' / ' + countJobs(p)),
                 h('td', null, h(Chip, { tone: detectScheduling(p) === 'dag' ? 'busy' : 'idle' }, detectScheduling(p) === 'dag' ? 'DAG' : '阶段')),
@@ -4089,26 +6586,748 @@ function PipelineList(props) {
                 h('td', null, fmtAgo(p.updatedAt)),
                 h('td', null,
                   h('span', { style: { display: 'flex', gap: '4px' } },
+                    h(Button, { size: 'sm', label: '详情', onClick: () => props.onOpen(p.id) }),
                     h(Button, { size: 'sm', label: '编辑', onClick: () => props.onEdit(p.id) }),
                     h(Button, { size: 'sm', icon: 'play', label: '运行', onClick: () => props.onRun(p) }),
-                    h(Button, { size: 'sm', variant: 'danger', icon: 'trash', onClick: () => props.onDelete(p) }))),
+                    h(Button, { size: 'sm', variant: 'danger', icon: 'trash', label: '删除', onClick: () => props.onDelete(p) }))),
               ),
             )),
         ),
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * 只读编排视图：与编辑器同构（阶段成列、节点为块状卡片），但不可编辑。
+ * 节点卡片复用 src/client/canvas.js 导出的纯展示构件 NodeCard（画布任务维护），
+ * require 不可用时降级为内置只读卡片，保证详情页在缺模块时仍可用。
+ * ------------------------------------------------------------------ */
+
+/** 兜底只读卡片：字段与 canvas.js 的 NodeCard 视觉契约一致（类名 + data-role）。 */
+function DisplayNodeCard(props) {
+  const job = props.job || {};
+  const seconds = job.timeoutMs ? Math.round(job.timeoutMs / 1000) : 0;
+  return h(
+    'div',
+    {
+      className: 'dsh-devops-nodecard',
+      'data-role': 'node-card',
+      'data-readonly': 'true',
+      'data-selected': props.selected ? 'true' : undefined,
+      // 状态色：由父层给定，颜色交给 CSS 的 [data-status]/[data-tone]
+      'data-status': props.status || 'pending',
+      'data-tone': toneOfStatus(props.status || 'pending'),
+      onClick: (e) => {
+        if (e && e.stopPropagation) e.stopPropagation();
+        if (props.onSelect) props.onSelect(job.id);
+      },
+    },
+    h(
+      'div',
+      { className: 'dsh-devops-nodecard-head' },
+      props.index ? h('span', { className: 'dsh-devops-nodecard-index' }, String(props.index)) : null,
+      h('span', { className: 'dsh-devops-nodecard-title dsh-devops-truncate' }, job.name || job.id),
+      job.allowFailure ? h('span', { className: 'dsh-devops-nodecard-flag', title: '允许失败，失败不阻断后续' }, '容错') : null,
+    ),
+    h('div', { className: 'dsh-devops-nodecard-type dsh-devops-monospace dsh-devops-truncate', title: job.node }, job.node),
+    h(
+      'div',
+      { className: 'dsh-devops-nodecard-meta' },
+      h('span', { className: 'dsh-devops-nodecard-key' }, '执行条件'),
+      h('span', { className: 'dsh-devops-truncate' }, whenLabel(job.when)),
+      h('span', { className: 'dsh-devops-nodecard-key' }, '服务器'),
+      h('span', { className: 'dsh-devops-truncate' }, job.server || '（默认）'),
+      seconds ? h('span', { className: 'dsh-devops-nodecard-key' }, '超时') : null,
+      seconds ? h('span', null, seconds + 's') : null,
+    ),
+    (job.needs || []).length
+      ? h(
+          'div',
+          { className: 'dsh-devops-nodecard-needs' },
+          h('span', { className: 'dsh-devops-nodecard-key' }, 'needs'),
+          (job.needs || []).map((need) => h('span', { key: need, className: 'dsh-devops-nodecard-need' }, need)),
+        )
+      : null,
+    (job.artifacts || []).length ? h('div', { className: 'dsh-devops-nodecard-foot' }, (job.artifacts || []).length + ' 项产物') : null,
+  );
+}
+
+/**
+ * NodeCard 的取用策略：
+ * canvas.js 目前的 NodeCard 带编辑期拖拽行为（draggable + onDragStart），不是纯展示构件。
+ * 因此只在它显式声明了只读支持（NodeCard.supportsReadonly === true）时复用它；
+ * 否则用字段/类名完全一致的 DisplayNodeCard，保证详情页**当下就是只读**。
+ * canvas 负责人加上该标志后，这里会自动切换为复用，无需再改本文件。
+ */
+const NodeCard =
+  typeof canvasModule.NodeCard === 'function' && canvasModule.NodeCard.supportsReadonly === true
+    ? canvasModule.NodeCard
+    : DisplayNodeCard;
+
+/** 执行条件的中文文案（与画布一致）。 */
+function whenLabel(when) {
+  if (when === 'manual') return '手动触发';
+  if (when === 'always') return '总是执行';
+  return '上游成功后';
+}
+
+/** 原始字段值的展示文本（对象/数组走 JSON，长脚本保留换行）。 */
+function rawValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    return String(value);
+  }
+}
+
+/**
+ * 找「该节点最近一次运行」：按开始时间倒序，取第一个确实包含该 step 的运行。
+ * 运行摘要里没有 steps 明细时（列表接口不带）降级为最近一次运行，避免永远显示「没有运行记录」。
+ */
+function latestRunForStep(runs, pipelineId, stepId) {
+  const mine = (runs || [])
+    .filter((run) => run && run.pipelineId === pipelineId)
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+  let fallback = null;
+  for (const run of mine) {
+    const steps = run.steps;
+    if (steps && typeof steps === 'object') {
+      if (Object.prototype.hasOwnProperty.call(steps, stepId)) return run;
+      continue;
+    }
+    if (!fallback) fallback = run;
+  }
+  return fallback;
+}
+
+/** 状态 → 语义色调（与 state.js 的 run/step tone 口径一致，供 data-tone 使用）。 */
+function toneOfStatus(status) {
+  if (status === 'success') return 'ok';
+  if (status === 'failed') return 'error';
+  if (status === 'running') return 'busy';
+  if (status === 'canceled') return 'warn';
+  return 'idle';
+}
+
+/**
+ * 一组运行里，某节点的**最近一次执行状态**（jobId → status）。
+ * 运行没有 step 明细时返回 null，卡片保持中性 —— 不猜状态。
+ */
+function stepStatusMap(runs, pipelineId) {
+  const mine = (runs || [])
+    .filter((run) => run && run.pipelineId === pipelineId)
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+  const out = {};
+  for (const run of mine) {
+    const steps = run.steps;
+    if (!steps || typeof steps !== 'object') continue;
+    for (const stepId of Object.keys(steps)) {
+      if (!Object.prototype.hasOwnProperty.call(out, stepId)) {
+        out[stepId] = (steps[stepId] && steps[stepId].status) || null;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 只读编排画布：阶段成列、节点为块状卡片，与编辑器同构。
+ * 与编辑器的差别全部集中在「没有任何结构变更入口」：无增删阶段、无拖拽投放、无列头工具。
+ */
+function ReadonlyBoard(props) {
+  const pipeline = props.pipeline || {};
+  const stages = pipeline.stages || [];
+  /**
+   * 节点/阶段状态由父层以纯函数给出（jobId → run status），
+   * 这里只负责把状态挂成 data-status / data-tone，颜色一律交给 CSS。
+   */
+  const statusOf = props.stepStatusOf || (() => null);
+  /** 阶段状态：任一节点失败 → failed；有运行中 → running；全部成功 → success；否则 pending。 */
+  function stageStatus(stage) {
+    const list = (stage.jobs || []).map((job) => statusOf(job.id)).filter(Boolean);
+    if (list.length === 0) return 'pending';
+    if (list.indexOf('failed') >= 0) return 'failed';
+    if (list.indexOf('running') >= 0) return 'running';
+    if (list.indexOf('queued') >= 0) return 'queued';
+    if (list.every((s) => s === 'success' || s === 'skipped')) return 'success';
+    return 'pending';
+  }
+  if (stages.length === 0) {
+    return h(
+      'div',
+      { className: 'dsh-devops-board dsh-devops-readonly', 'data-role': 'readonly-board', 'data-readonly': 'true' },
+      h('div', { className: 'dsh-devops-empty dsh-devops-board-empty' }, '这条流水线还没有阶段'),
+    );
+  }
+  return h(
+    'div',
+    { className: 'dsh-devops-board dsh-devops-readonly', 'data-role': 'readonly-board', 'data-readonly': 'true' },
+    stages.map((stage, stageIndex) =>
+      h(
+        'div',
+        {
+          key: stage.id || stageIndex,
+          className: 'dsh-devops-column',
+          'data-role': 'readonly-column',
+          'data-stage-id': stage.id,
+          'data-parallel': stage.parallel ? 'true' : undefined,
+          // 阶段整体状态：列头据此着色
+          'data-status': stageStatus(stage),
+          'data-tone': toneOfStatus(stageStatus(stage)),
+        },
+        h(
+          'div',
+          { className: 'dsh-devops-column-head' },
+          h('span', { className: 'dsh-devops-column-index' }, String(stageIndex + 1)),
+          h('span', { className: 'dsh-devops-column-title dsh-devops-truncate' }, stage.name || stage.id),
+          stage.parallel ? h(Chip, { tone: 'busy', title: '阶段内节点并行执行' }, '并行') : null,
+          h('span', { className: 'dsh-devops-hint' }, (stage.jobs || []).length + ' 节点'),
+        ),
+        h(
+          'div',
+          { className: 'dsh-devops-column-cards', 'data-role': 'readonly-cards' },
+          (stage.jobs || []).map((job, jobIndexInStage) =>
+            h(
+              'div',
+              {
+                key: job.id,
+                className: 'dsh-devops-slot',
+                'data-role': 'readonly-slot',
+                'data-job': job.id,
+                'data-readonly': 'true',
+                'data-status': statusOf(job.id) || 'pending',
+                'data-tone': toneOfStatus(statusOf(job.id) || 'pending'),
+                role: 'button',
+                tabIndex: 0,
+                title: '查看节点「' + (job.name || job.id) + '」的信息与日志',
+                onClick: () => props.onSelectJob && props.onSelectJob(job.id),
+                onKeyDown: (event) => {
+                  if (event && (event.key === 'Enter' || event.key === ' ')) {
+                    if (event.preventDefault) event.preventDefault();
+                    if (props.onSelectJob) props.onSelectJob(job.id);
+                  }
+                },
+                // 只读：卡片自带 draggable，这里在容器上取消拖拽默认行为（画布任务可选加 readonly 支持）
+                onDragStart: (event) => {
+                  if (event && event.preventDefault) event.preventDefault();
+                },
+                onDragOver: (event) => {
+                  if (event && event.preventDefault) event.preventDefault();
+                },
+                onDrop: (event) => {
+                  if (event && event.preventDefault) event.preventDefault();
+                },
+              },
+              h(NodeCard, {
+                job,
+                stageId: stage.id,
+                index: jobIndexInStage + 1,
+                readonly: true,
+                status: statusOf(job.id) || 'pending',
+                selected: props.selectedJob === job.id,
+                onSelect: props.onSelectJob,
+              }),
+            ),
+          ),
+          (stage.jobs || []).length === 0 ? h('div', { className: 'dsh-devops-column-empty' }, '该阶段还没有节点') : null,
+        ),
+      ),
+    ),
+  );
+}
+
+/** 抽屉页签定义（内部切换界面）。 */
+const DETAIL_TABS = [
+  { id: 'info', label: '节点信息' },
+  { id: 'log', label: '日志' },
+];
+
+/** 节点信息页：节点类型 / 字段原始值 / 服务器 / 执行条件 / 超时 / needs / 产物 等。 */
+function NodeInfoPanel(props) {
+  const job = props.job || {};
+  const descriptor = props.descriptor || null;
+  const withValues = job.with || {};
+  const fieldLabel = (name) => {
+    const fields = (descriptor && descriptor.fields) || [];
+    const found = fields.find((f) => f && f.name === name);
+    return found && found.label ? found.label : name;
+  };
+  const retry = job.retry || {};
+
+  /**
+   * 信息分「执行 / 依赖与产物 / 环境」三组，每组是一张卡片，
+   * 而不是过去那样一整片扁平 KV —— 用户要的「分层」在这里落地。
+   */
+  const groups = [
+    {
+      id: 'exec',
+      title: '执行',
+      entries: [
+        ['节点 id', h('span', { className: 'dsh-devops-monospace' }, job.id || '—')],
+        ['名称', job.name || '—'],
+        ['节点类型', h('span', { className: 'dsh-devops-monospace' }, job.node || '—')],
+        ['所属阶段', props.stageName || '—'],
+        ['执行条件', whenLabel(job.when)],
+        ['服务器', job.server || props.defaultServer || '（默认）'],
+        ['超时', job.timeoutMs ? Math.round(job.timeoutMs / 1000) + ' 秒（' + job.timeoutMs + ' ms）' : '—'],
+        ['允许失败', job.allowFailure ? '是' : '否'],
+        ['重试', retry.max ? '最多 ' + retry.max + ' 次，间隔 ' + (retry.delayMs || 0) + ' ms' : '不重试'],
+      ],
+    },
+    {
+      id: 'deps',
+      title: '依赖与产物',
+      entries: [
+        ['needs', (job.needs || []).length ? (job.needs || []).join('、') : '无'],
+        ['产物', (job.artifacts || []).length ? (job.artifacts || []).join('、') : '无'],
+        ['缓存', job.cache && job.cache.key ? job.cache.key : '未配置'],
+      ],
+    },
+    {
+      id: 'env',
+      title: '环境与准备',
+      entries: [
+        ['环境变量', (job.env || []).length ? (job.env || []).map((e) => e.name).join('、') : '无'],
+        ['变量组引用', (job.envSetRefs || []).length ? (job.envSetRefs || []).join('、') : '无'],
+        ['允许自动准备', job.allowProvision ? '是' : '否'],
+      ],
+    },
+  ];
+
+  const paramKeys = Object.keys(withValues);
+  return h(
+    'div',
+    { className: 'dsh-devops-drawer-panel', 'data-role': 'drawer-panel-info' },
+    descriptor && descriptor.description ? h('div', { className: 'dsh-devops-hint' }, descriptor.description) : null,
+    groups.map((group) =>
+      h(
+        'div',
+        { key: group.id, className: 'dsh-devops-card', 'data-role': 'drawer-info-group', 'data-group': group.id },
+        h('div', { className: 'dsh-devops-card-head' },
+          h('span', { className: 'dsh-devops-card-title' }, group.title)),
+        h(KV, { entries: group.entries }),
+      ),
+    ),
+    h('h3', { className: 'dsh-devops-card-title', style: { marginTop: '12px' } }, '节点参数（原始值）'),
+    paramKeys.length === 0
+      ? h('div', { className: 'dsh-devops-hint' }, '该节点没有参数')
+      : paramKeys.map((key) =>
+          h(
+            'div',
+            { key, className: 'dsh-devops-field-row' },
+            h(
+              'div',
+              { className: 'dsh-devops-field-head' },
+              h('span', { className: 'dsh-devops-field-label' }, fieldLabel(key)),
+              h('span', { className: 'dsh-devops-hint' }, key),
+            ),
+            // 原始值：等宽深色小面板（与终端观感呼应），颜色/底色由 CSS 决定
+            h('div', {
+              className: 'dsh-devops-drawer-raw dsh-devops-monospace',
+              'data-tone': 'code',
+            }, rawValue(withValues[key])),
+          ),
+        ),
+  );
+}
+
+/**
+ * 日志页：复用既有的 LogPanel（实时流 / 过滤 / 下载 / 内存环提示），
+ * 只负责「取该节点最近一次运行」这一件事；没有运行记录时给明确文案而不是空白。
+ */
+function NodeLogPanel(props) {
+  const job = props.job || null;
+  const run = props.run || null;
+  const runId = run ? run.id : '';
+  const stepId = job ? job.id : '';
+  const live = !!(run && (run.status === 'running' || run.status === 'queued'));
+
+  return h(
+    'div',
+    { className: 'dsh-devops-drawer-panel', 'data-role': 'drawer-panel-log' },
+    h(
+      'div',
+      { className: 'dsh-devops-hint', style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } },
+      h('span', null, '来自最近一次运行 '),
+      h('span', { className: 'dsh-devops-monospace' }, runId),
+      run && run.status
+        ? h(Chip, { tone: runTone(run.status) }, RUN_STATUS_TEXT[run.status] || run.status)
+        : null,
+    ),
+    runId
+      ? h(LogPanel, { runId, stepId, live })
+      : h('div', { className: 'dsh-devops-hint', 'data-role': 'drawer-log-empty' }, '该节点还没有运行记录'),
+  );
+}
+
+/**
+ * 节点详情抽屉：**圆角悬浮卡片**，从右侧滑入并浮在内容上方。
+ *
+ * 形态契约（task-8，视觉由 styles.js 按属性落地，组件里不写死颜色/圆角）：
+ *  - .dsh-devops-drawer-layer[data-shape="floating"]：四周留白的浮层容器（不再贴右边缘）；
+ *  - .dsh-devops-drawer[data-variant="floating"]：圆角 + 阴影 + 细边框 + max-height 受视口约束；
+ *  - .dsh-devops-drawer-mask[data-blur="true"]：半透明 + 轻微模糊遮罩。
+ * 既有的 data-role / data-open / data-tab 契约与三种关闭方式（遮罩 / 关闭按钮 / Esc）保持不变。
+ */
+function DetailDrawer(props) {
+  const job = props.job || null;
+  const open = !!job;
+  const [tab, setTab] = useState('info');
+  const jobId = job ? job.id : '';
+
+  // 抽屉打开时支持 Esc 关闭（Node 环境下没有 document，跳过）
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const onKey = (event) => {
+      if (event && event.key === 'Escape' && props.onClose) props.onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      if (document && document.removeEventListener) document.removeEventListener('keydown', onKey);
+    };
+  }, [open, props.onClose]);
+
+  // 换节点时回到「节点信息」，避免看到上一个节点的日志
+  useEffect(() => {
+    if (open) setTab('info');
+  }, [jobId, open]);
+
+  const infoActive = tab === 'info';
+  return h(
+    'div',
+    {
+      className: 'dsh-devops-drawer-layer',
+      'data-role': 'detail-drawer',
+      // 悬浮形态：脱离右边缘的浮层，而不是贴合边缘的全高面板
+      'data-shape': 'floating',
+      'data-open': open ? 'true' : 'false',
+      'data-tab': tab,
+      // 状态语义：整层可被 CSS 按运行状态着色（无运行记录时为 idle）
+      'data-status': props.run && props.run.status ? props.run.status : 'idle',
+      'data-tone': props.run && props.run.status ? runTone(props.run.status) : 'idle',
+      'aria-hidden': open ? 'false' : 'true',
+    },
+    h('div', {
+      className: 'dsh-devops-drawer-mask',
+      'data-role': 'drawer-mask',
+      // 半透明 + 轻微模糊
+      'data-blur': 'true',
+      onClick: () => props.onClose && props.onClose(),
+    }),
+    h(
+      'aside',
+      {
+        className: 'dsh-devops-drawer',
+        'data-role': 'drawer-panel',
+        // 圆角悬浮卡片：圆角/阴影/边框/视口内最大高度由 CSS 按该属性落地
+        'data-variant': 'floating',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-label': '节点详情',
+      },
+      h(
+        'div',
+        { className: 'dsh-devops-drawer-head' },
+        h('span', { className: 'dsh-devops-drawer-title dsh-devops-truncate' }, job ? job.name || job.id : ''),
+        job ? h('span', { className: 'dsh-devops-tag dsh-devops-monospace' }, job.node) : null,
+        // 这次运行的执行状态：颜色承担语义（成功/失败/运行中/取消），无记录时不显示
+        props.run && props.run.status
+          ? h(
+              Chip,
+              { tone: runTone(props.run.status), dot: true, title: '最近一次运行的状态' },
+              RUN_STATUS_TEXT[props.run.status] || props.run.status,
+            )
+          : null,
+        h('div', { className: 'dsh-devops-spacer' }),
+        h(Button, { variant: 'ghost', size: 'sm', icon: 'close', label: '关闭', title: '关闭抽屉（Esc）', onClick: () => props.onClose && props.onClose() }),
+      ),
+      h(
+        'div',
+        { className: 'dsh-devops-tabs', role: 'tablist', 'data-role': 'drawer-tabs' },
+        DETAIL_TABS.map((item) =>
+          h(
+            'button',
+            {
+              key: item.id,
+              type: 'button',
+              role: 'tab',
+              className: 'dsh-devops-tab',
+              'data-role': 'drawer-tab',
+              'data-tab': item.id,
+              'data-active': tab === item.id ? 'true' : undefined,
+              'aria-selected': tab === item.id ? 'true' : 'false',
+              onClick: () => setTab(item.id),
+            },
+            item.label,
+          ),
+        ),
+      ),
+      h(
+        'div',
+        { className: 'dsh-devops-drawer-body' },
+        h('div', { 'data-role': 'drawer-view', 'data-view': 'info', hidden: !infoActive },
+          infoActive
+            ? h(NodeInfoPanel, { job, stageName: props.stageName, descriptor: props.descriptor, defaultServer: props.defaultServer })
+            : null),
+        h('div', { 'data-role': 'drawer-view', 'data-view': 'log', hidden: infoActive },
+          infoActive ? null : h(NodeLogPanel, { job, run: props.run })),
+      ),
+    ),
+  );
+}
+
+/**
+ * 流水线详情：与编辑器同构的**只读**编排视图 + 右侧伸缩抽屉 + 最近运行。
+ *
+ * 只读边界：不能拖拽、不能改名、不能增删阶段/节点、不能改字段；
+ * 点击节点只在右侧弹出抽屉（不跳页），抽屉内可切换「节点信息 / 日志」。
+ */
+function PipelineDetail(props) {
+  const pipeline = props.pipeline || {};
+  const runs = props.runs || [];
+  const nodes = props.nodes || [];
+  const mine = runs
+    .filter((run) => run && run.pipelineId === pipeline.id)
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+  const active = mine.filter((run) => run.status === 'running' || run.status === 'queued');
+  const stages = pipeline.stages || [];
+  const scheduling = detectScheduling(pipeline);
+  const now = Date.now();
+
+  const [selectedJob, setSelectedJob] = useState(null);
+  /**
+   * 本页自管滚动（task-11）：详情页内部有画布/检查器滚动区，外层不该跟着滚。
+   * 必须放在**提前 return 之前**，否则首次渲染少执行一个 hook → React #310。
+   */
+  useEffect(() => {
+    if (typeof props.onBodyFlush !== 'function') return undefined;
+    props.onBodyFlush(true);
+    return () => props.onBodyFlush(false);
+  }, [props.onBodyFlush]);
+  const allJobs = useMemo(() => {
+    const out = [];
+    for (const stage of stages) {
+      for (const job of stage.jobs || []) out.push({ job, stage });
+    }
+    return out;
+  }, [pipeline]);
+  // 节点/阶段状态：来自该流水线最近各次运行里该步骤的状态，用于 data-status 着色
+  const stepStatus = useMemo(() => stepStatusMap(runs, pipeline.id), [runs, pipeline.id]);
+  const statusOfStep = (jobId) => stepStatus[jobId] || null;
+  const current = allJobs.find((entry) => entry.job.id === selectedJob) || null;
+  const currentRun = current ? latestRunForStep(runs, pipeline.id, current.job.id) : null;
+  const descriptor = current ? nodes.find((node) => node && node.type === current.job.node) || null : null;
+
+  return h(
+    'div',
+    { className: 'dsh-devops-detail', 'data-role': 'pipeline-detail' },
+    h(
+      'div',
+      { className: 'dsh-devops-head' },
+      h(Button, { size: 'sm', icon: 'chevron', label: '← 流水线列表', onClick: props.onBack }),
+      h('h2', { className: 'dsh-devops-title' }, pipeline.name || pipeline.id),
+      h(Chip, { tone: scheduling === 'dag' ? 'busy' : 'idle' }, scheduling === 'dag' ? 'DAG 调度' : '阶段调度'),
+      active.length ? h(Chip, { tone: 'busy', dot: true }, active.length + ' 个运行中') : null,
+      h('div', { className: 'dsh-devops-spacer' }),
+      h(Button, { size: 'sm', icon: 'refresh', label: '刷新', onClick: props.onReload }),
+      h(Button, { size: 'sm', icon: 'play', label: '运行', variant: 'primary', onClick: () => props.onRun(pipeline) }),
+      h(Button, { size: 'sm', label: '编辑', onClick: () => props.onEdit(pipeline.id) }),
+    ),
+
+    h(
+      'div',
+      { className: 'dsh-devops-editor dsh-devops-detail-editor' },
+      h(
+        'div',
+        { className: 'dsh-devops-palette', 'data-role': 'detail-overview' },
+        h(
+          'div',
+          { className: 'dsh-devops-palette-scroll' },
+          h('h3', { className: 'dsh-devops-card-title' }, '定义概览'),
+          h(KV, {
+            entries: [
+              ['标识', h('span', { className: 'dsh-devops-monospace' }, pipeline.id || '—')],
+              ['描述', pipeline.description || '—'],
+              ['分类', pipeline.category || '—'],
+              ['标签', (pipeline.tags || []).length ? (pipeline.tags || []).join('、') : '—'],
+              ['阶段 / 节点', stages.length + ' 阶段 / ' + countJobs(pipeline) + ' 节点'],
+              ['调度模式', scheduling === 'dag' ? 'DAG（按 needs 依赖）' : '阶段串行（阶段内可并行）'],
+              ['变量', (pipeline.variables || []).length ? (pipeline.variables || []).map((v) => v.name).join('、') : '无'],
+              ['默认服务器', (pipeline.defaults && pipeline.defaults.server) || 'local'],
+              ['更新时间', fmtTime(pipeline.updatedAt)],
+            ],
+          }),
+        ),
+      ),
+
+      h(
+        'div',
+        // minHeight:0 必须保留：flex 子项默认 min-height:auto 会拒绝收缩，
+        // 画布被内容撑高后自身滚动失效（用户报「滚哪都是整页动」）。
+        { style: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 } },
+        h(
+          'div',
+          { className: 'dsh-devops-statusbar-inline', 'data-role': 'detail-board-bar' },
+          h('span', null, '阶段与节点：与编辑器同构的只读编排视图；点节点在右侧查看信息与日志'),
+          h('div', { className: 'dsh-devops-spacer' }),
+          h(Chip, null, stages.length + ' 阶段'),
+          h(Chip, null, countJobs(pipeline) + ' 节点'),
+        ),
+        h(ReadonlyBoard, {
+          pipeline,
+          selectedJob,
+          stepStatusOf: statusOfStep,
+          onSelectJob: setSelectedJob,
+        }),
+      ),
+
+      h(
+        'div',
+        { className: 'dsh-devops-inspector', 'data-role': 'detail-runs' },
+        h(
+          'div',
+          { className: 'dsh-devops-inspector-scroll' },
+          h('h3', { className: 'dsh-devops-card-title', style: { marginBottom: '8px' } }, '最近运行'),
+          mine.length === 0
+            ? h(Empty, { text: '这条流水线还没有运行记录，点右上角「运行」试试' })
+            : h(
+                'table',
+                { className: 'dsh-devops-table' },
+                h('thead', null,
+                  h('tr', null,
+                    h('th', null, '运行 id'),
+                    h('th', null, '状态'),
+                    h('th', null, '开始'),
+                    h('th', null, '耗时'),
+                    h('th', null, ''),
+                  )),
+                h('tbody', null,
+                  mine.slice(0, 10).map((run) =>
+                    h('tr', { key: run.id },
+                      h('td', { className: 'dsh-devops-monospace' }, run.id),
+                      h('td', null, h(Chip, { tone: runTone(run.status), dot: true }, RUN_STATUS_TEXT[run.status] || run.status)),
+                      h('td', null, fmtAgo(run.startedAt, now)),
+                      h('td', null, run.startedAt ? fmtDuration((run.finishedAt || now) - run.startedAt) : '—'),
+                      h('td', null, h(Button, { size: 'sm', label: '查看运行', onClick: () => props.onOpenRun(run.id) })),
+                    ),
+                  )),
+              ),
+        ),
+      ),
+    ),
+
+    h(DetailDrawer, {
+      job: current ? current.job : null,
+      stageName: current ? current.stage.name || current.stage.id : '',
+      descriptor,
+      run: currentRun,
+      defaultServer: (pipeline.defaults && pipeline.defaults.server) || 'local',
+      onClose: () => setSelectedJob(null),
+    }),
+  );
+}
+
 function Pipelines(props) {
   const [mode, setMode] = useState('list');
   const [draft, setDraft] = useState(null);
-  const [createOpen, setCreateOpen] = useState(!!props.initialAction);
-  const [busy, setBusy] = useState(false);
+  const [detailId, setDetailId] = useState('');
+  const [detailData, setDetailData] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  // 只有明确要求「新建」时才自动弹创建框。
+  // （旧版写成 !!initialAction：从模板页创建完跳过来会无故弹出「新建流水线」模态框。）
+  const [createOpen, setCreateOpen] = useState(!!(props.initialAction && props.initialAction.create));
   const [runTarget, setRunTarget] = useState(null);
+  /**
+   * 视图恢复是否已完成。
+   * 用 state 而不是 ref：桩 hooks 下 useRef 每次返回新对象，无法用来防重入；
+   * state 在真实 React 与桩环境下都能稳定表达「恢复只做一次」。
+   */
+  const [restored, setRestored] = useState(false);
 
   // 列表侧数据缺失时拉一次，保证直接进入编辑器也有内容
   useEffect(() => {
     if (props.state.pipelines.length === 0) props.onReload();
   }, []);
+
+  /**
+   * 编辑器路径自管滚动（task-11 协同）。
+   * 只在 `Pipelines` 这一处声明（详情页在 PipelineDetail 内声明），
+   * 避免两处同时 true/false 互相覆盖；editor.js 内部不再重复声明。
+   */
+  useEffect(() => {
+    if (typeof props.onBodyFlush !== 'function') return undefined;
+    if (mode !== 'edit') return undefined;
+    props.onBodyFlush(true);
+    return () => props.onBodyFlush(false);
+  }, [props.onBodyFlush, mode]);
+
+  /**
+   * 恢复上次离开时的视图位置（mode + id）。
+   *
+   * 只读记忆里的**轻量标记**，再按 id 现取一份最新数据 —— 恢复的是「位置」，
+   * 不是「陈旧内容」。以下情况一律降级回列表：没有记忆、记忆非法、目标已被删除、
+   * 取数报错。显式跳转（initialAction）优先于记忆。
+   */
+  useEffect(() => {
+    if (restored) return undefined;
+    if (props.initialAction) {
+      setRestored(true);
+      return undefined;
+    }
+    const view = resolvePipelineView(props.remembered !== undefined ? props.remembered : readViewState());
+    if (view.mode === 'list') {
+      setRestored(true);
+      return undefined;
+    }
+    let alive = true;
+    setLoadingDetail(true);
+    loadPipelineForView(view, (id) => api.getPipeline(id)).then((result) => {
+      if (!alive) return;
+      setLoadingDetail(false);
+      if (!result.ok) {
+        // 目标已被删除 / 取数失败：清掉记忆并回列表，绝不白屏
+        resetPipelineView();
+        setDetailId('');
+        setMode('list');
+        if (props.toast) props.toast.warn('上次打开的流水线已不存在，已回到列表');
+        setRestored(true);
+        return;
+      }
+      const pipeline = result.pipeline;
+      setDetailId(pipeline.id);
+      setDetailData(pipeline);
+      if (view.mode === 'edit') {
+        setDraft(pipeline);
+        setMode('edit');
+      } else {
+        setMode('detail');
+      }
+      setRestored(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [restored]);
+
+  /**
+   * 外部跳转。app.js 的约定：
+   *   { detail: id } → 进详情（概览/运行页的「查看流水线」）
+   *   { edit: id }   → 直接进编辑器（运行详情的「编辑流水线」）
+   *   { create: true } → 弹新建框
+   *   { run: id }    → 弹运行框
+   */
+  useEffect(() => {
+    const action = props.initialAction;
+    if (!action) return;
+    if (action.edit) openEditor(action.edit);
+    else if (action.detail) openDetail(action.detail);
+    else if (action.create) setCreateOpen(true);
+    else if (action.run) {
+      const target = (props.state.pipelines || []).find((p) => p.id === action.run);
+      if (target) setRunTarget(target);
+    }
+  }, [props.initialAction]);
 
   function startCreate(id, name) {
     const base = blankPipeline();
@@ -4117,17 +7336,63 @@ function Pipelines(props) {
     setDraft(base);
     setMode('edit');
     setCreateOpen(false);
+    // 未保存的新草稿不写「编辑中」记忆：它在服务端并不存在，
+    // 否则离开再回来会被恢复逻辑判为「已删除」并弹出误导性提示。
+    resetPipelineView();
   }
 
-  async function open(id) {
+  /** 打开编辑器（列表的「编辑」按钮、详情页的「编辑」都走这里）。 */
+  async function openEditor(id) {
     try {
       const pipeline = await api.getPipeline(id);
       setDraft(pipeline);
+      setDetailId(id);
+      setDetailData(pipeline);
       setMode('edit');
+      // 只记 id 与模式，不记定义本身
+      writeViewState({ pipelinesMode: 'edit', pipelinesId: id, editPipelineId: id });
     } catch (error) {
       props.toast.error(error.message || String(error));
     }
   }
+
+  /** 打开详情；列表里可能还没有完整定义，缺了就从后端取一份并缓存下来。 */
+  async function openDetail(id) {
+    setDetailId(id);
+    setMode('detail');
+    writeViewState({ pipelinesMode: 'detail', pipelinesId: id });
+    const cached = (props.state.pipelines || []).find((p) => p.id === id);
+    if (cached) {
+      setDetailData(cached);
+      return;
+    }
+    setDetailData(null);
+    setLoadingDetail(true);
+    try {
+      const pipeline = await api.getPipeline(id);
+      setDetailData(pipeline);
+    } catch (error) {
+      props.toast.error(error.message || String(error));
+      setMode('list');
+    } finally {
+      setLoadingDetail(false);
+    }
+  }
+
+  /** 详情页要展示的数据：优先用列表缓存（刷新后自动同步），否则用单独取到的那一份。 */
+  const detailPipeline =
+    (props.state.pipelines || []).find((p) => p.id === detailId) ||
+    (detailData && detailData.id === detailId ? detailData : null);
+
+  const activeRunsByPipeline = useMemo(() => {
+    const map = {};
+    for (const run of props.state.runs || []) {
+      if (run && (run.status === 'running' || run.status === 'queued') && run.pipelineId && !map[run.pipelineId]) {
+        map[run.pipelineId] = run;
+      }
+    }
+    return map;
+  }, [props.state.runs]);
 
   async function save(pipeline) {
     const exists = props.state.pipelines.some((p) => p.id === pipeline.id);
@@ -4141,6 +7406,10 @@ function Pipelines(props) {
     try {
       await api.deletePipeline(pipeline.id);
       props.toast.ok('已删除');
+      if (detailId === pipeline.id) {
+        setDetailId('');
+        backToList();
+      }
       await props.onReload();
     } catch (error) {
       props.toast.error(error.message || String(error));
@@ -4154,9 +7423,14 @@ function Pipelines(props) {
       nodes: props.state.nodes,
       servers: props.state.servers,
       ctx: props.ctx,
+      fieldCtx: props.fieldCtx,
       toast: props.toast,
       recent: props.recent,
       remember: props.remember,
+      // 选中节点的记忆由 app.js 下发、editor.js 消费（editor.js 归浮层任务）。
+      // 这里只负责透传，不实现其内部选中逻辑。
+      editMemory: props.editMemory,
+      rememberEdit: props.rememberEdit,
       onSave: save,
       onReload: props.onReload,
       onTemplatesChanged: props.onTemplatesChanged,
@@ -4164,8 +7438,49 @@ function Pipelines(props) {
         props.onReload();
         if (runId) props.onOpenRun(runId);
       },
-      onBack: () => setMode('list'),
+      // 回详情则记忆切到 detail；回列表则清记忆（用户明确退出编辑状态）
+      onBack: () => (detailId ? openDetail(detailId) : backToList()),
     });
+  }
+
+  /** 回列表：同时把视图记忆重置为 list，用户不会被卡在详情/编辑器里出不来。 */
+  function backToList() {
+    resetPipelineView();
+    setMode('list');
+  }
+
+  if (mode === 'detail') {
+    if (!detailPipeline) {
+      return h(
+        'div',
+        null,
+        h(Button, { size: 'sm', icon: 'chevron', label: '← 流水线列表', onClick: backToList }),
+        loadingDetail ? h(Empty, { text: '加载中…' }) : h(Empty, { text: '找不到这条流水线（可能已被删除）' }),
+      );
+    }
+    return h(
+      'div',
+      null,
+      h(PipelineDetail, {
+        pipeline: detailPipeline,
+        runs: props.state.runs,
+        nodes: props.state.nodes,
+        onBack: backToList,
+        onEdit: openEditor,
+        onRun: (p) => setRunTarget(p),
+        onReload: props.onReload,
+        onOpenRun: props.onOpenRun,
+      }),
+      runTarget ? h(QuickRunModal, {
+        pipeline: runTarget,
+        toast: props.toast,
+        onClose: () => setRunTarget(null),
+        onStarted: (runId) => {
+          props.onReload();
+          if (runId) props.onOpenRun(runId);
+        },
+      }) : null,
+    );
   }
 
   return h(
@@ -4175,13 +7490,16 @@ function Pipelines(props) {
       'div',
       { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' } },
       h('h2', { className: 'dsh-devops-title' }, '流水线'),
-      mode === 'edit' ? h(Button, { size: 'sm', label: '← 返回列表', onClick: () => setMode('list') }) : null,
+      h('span', { className: 'dsh-devops-hint' }, '点名称看详情，详情里可以编辑或运行'),
       h('div', { className: 'dsh-devops-spacer' }),
     ),
     h(PipelineList, {
       pipelines: props.state.pipelines,
+      runs: props.state.runs,
+      activeRunsByPipeline,
       onCreate: () => setCreateOpen(true),
-      onEdit: open,
+      onOpen: openDetail,
+      onEdit: openEditor,
       onRun: (p) => setRunTarget(p),
       onDelete: remove,
     }),
@@ -4263,7 +7581,29 @@ function QuickRunModal(props) {
 }
 
 exports.Pipelines = Pipelines;
+exports.PipelineList = PipelineList;
+exports.PipelineDetail = PipelineDetail;
+exports.ReadonlyBoard = ReadonlyBoard;
+exports.DetailDrawer = DetailDrawer;
+exports.NodeInfoPanel = NodeInfoPanel;
+exports.NodeLogPanel = NodeLogPanel;
+exports.NodeCard = NodeCard;
+exports.DETAIL_TABS = DETAIL_TABS;
+exports.latestRunForStep = latestRunForStep;
+exports.whenLabel = whenLabel;
+exports.rawValue = rawValue;
+exports.PipelineNameCell = PipelineNameCell;
+exports.activeRunOf = activeRunOf;
 exports.blankPipeline = blankPipeline;
+exports.runSummaryByPipeline = runSummaryByPipeline;
+exports.stepStatusMap = stepStatusMap;
+exports.toneOfStatus = toneOfStatus;
+exports.readViewState = readViewState;
+exports.writeViewState = writeViewState;
+exports.resetPipelineView = resetPipelineView;
+exports.resolvePipelineView = resolvePipelineView;
+exports.loadPipelineForView = loadPipelineForView;
+exports.resolveListFilters = resolveListFilters;
 });
 
 __def("./page-templates.js", function (module, exports, require) {
@@ -4277,6 +7617,46 @@ const { h, useState, useEffect, useMemo, clone } = require('./h.js');
 const { Button, TextInput, Select, Card, Empty, Chip, Field, Modal, KV, Banner, Switch } = require('./ui.js');
 const { FieldControl } = require('./fields.js');
 const { api } = require('./api.js');
+
+/* ------------------------------------------------------------------ *
+ * 视图记忆（模板页筛选）：与 page-pipelines.js / app.js 同一套约定，
+ * 读写 sessionStorage 的 'dsh-devops.view'，只存标量筛选条件。
+ * ------------------------------------------------------------------ */
+const VIEW_KEY = 'dsh-devops.view';
+
+/** 安全读取视图记忆（无 storage / JSON 损坏时降级为 null）。 */
+function readViewState() {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(VIEW_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 安全写入视图记忆（合并既有值；存不了不影响功能）。 */
+function writeViewState(patch) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    const current = readViewState() || {};
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify(Object.assign({}, current, patch)));
+  } catch {
+    /* 忽略：存不了不影响功能 */
+  }
+}
+
+/** 解析模板页筛选状态（只认标量，非法值降级为空/关闭）。 */
+function resolveTemplateFilters(remembered) {
+  const view = remembered && typeof remembered === 'object' ? remembered : null;
+  return {
+    keyword: view && typeof view.templatesKeyword === 'string' ? view.templatesKeyword : '',
+    category: view && typeof view.templatesCategory === 'string' ? view.templatesCategory : '',
+    favOnly: !!(view && view.templatesFavOnly === true),
+  };
+}
 
 /** 从模板参数生成一份表单初值。 */
 function initialParams(template) {
@@ -4334,7 +7714,7 @@ function TemplateParamsForm(props) {
             }),
             value: props.params[param.name],
             onChange: (v) => props.onChange(Object.assign({}, props.params, { [param.name]: v })),
-            ctx: props.ctx,
+            ctx: props.fieldCtx || props.ctx,
             serverId: props.state.settings && props.state.settings.defaultServer,
             serverFor: (id) => (props.state.servers || []).find((s) => s.id === id),
             recent: props.recent,
@@ -4419,6 +7799,7 @@ function InstantiateModal(props) {
             params,
             onChange: setParams,
             ctx: props.ctx,
+            fieldCtx: props.fieldCtx,
             state: props.state,
             recent: props.recent,
             remember: props.remember,
@@ -4452,9 +7833,30 @@ function InstantiateModal(props) {
 /** 模板列表。 */
 function Templates(props) {
   const templates = props.state.templates || [];
-  const [keyword, setKeyword] = useState('');
-  const [category, setCategory] = useState('');
-  const [favOnly, setFavOnly] = useState(false);
+  // 筛选条件属于「视图位置」：离开再回来时保留搜索词、分类与收藏过滤。
+  const saved = resolveTemplateFilters(props.remembered !== undefined ? props.remembered : readViewState());
+  const [keyword, setKeyword] = useState(saved.keyword);
+  const [category, setCategory] = useState(saved.category);
+  const [favOnly, setFavOnly] = useState(saved.favOnly);
+
+  /**
+   * 筛选变化即写入记忆（只存标量）。
+   *
+   * 只写「本次变化的那一项」：writeViewState 自己会与已存值合并。
+   * 不能拿 saved 当基线合并 —— saved 派生自 props.remembered，
+   * 那是 App 挂载时的快照、不会随我们的写入更新，
+   * 否则「先输关键字、再切分类」会把关键字覆盖回空值。
+   */
+  function patchFilter(patch) {
+    const next = {};
+    if (patch.keyword !== undefined) next.templatesKeyword = patch.keyword || '';
+    if (patch.category !== undefined) next.templatesCategory = patch.category || '';
+    if (patch.favOnly !== undefined) next.templatesFavOnly = !!patch.favOnly;
+    writeViewState(next);
+    if (patch.keyword !== undefined) setKeyword(patch.keyword);
+    if (patch.category !== undefined) setCategory(patch.category);
+    if (patch.favOnly !== undefined) setFavOnly(patch.favOnly);
+  }
   const [target, setTarget] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -4502,9 +7904,9 @@ function Templates(props) {
     h(
       'div',
       { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px' } },
-      h('div', { style: { width: '220px' } }, h(TextInput, { value: keyword, placeholder: '搜索模板', onChange: setKeyword })),
-      h('div', { style: { width: '150px' } }, h(Select, { value: category, placeholder: '全部分类', options: categories, onChange: setCategory })),
-      h(Button, { size: 'sm', icon: 'sparkle', label: '只看收藏', active: favOnly, onClick: () => setFavOnly(!favOnly) }),
+      h('div', { style: { width: '220px' } }, h(TextInput, { value: keyword, placeholder: '搜索模板', onChange: (v) => patchFilter({ keyword: v }) })),
+      h('div', { style: { width: '150px' } }, h(Select, { value: category, placeholder: '全部分类', options: categories, onChange: (v) => patchFilter({ category: v }) })),
+      h(Button, { size: 'sm', icon: 'sparkle', label: '只看收藏', active: favOnly, onClick: () => patchFilter({ favOnly: !favOnly }) }),
       h('div', { className: 'dsh-devops-spacer' }),
       h(Button, { size: 'sm', icon: 'refresh', label: '刷新', busy, onClick: props.onReload }),
     ),
@@ -4547,6 +7949,7 @@ function Templates(props) {
     target ? h(InstantiateModal, {
       template: target,
       ctx: props.ctx,
+      fieldCtx: props.fieldCtx,
       state: props.state,
       toast: props.toast,
       recent: props.recent,
@@ -4560,6 +7963,9 @@ function Templates(props) {
   );
 }
 
+exports.resolveTemplateFilters = resolveTemplateFilters;
+exports.readViewState = readViewState;
+exports.writeViewState = writeViewState;
 exports.Templates = Templates;
 exports.InstantiateModal = InstantiateModal;
 exports.previewInterpolate = previewInterpolate;
@@ -4578,11 +7984,179 @@ const { LogPanel } = require('./logs.js');
 const { diagnoseStep, StuckPanel, PhaseFlow, humanMs, attributionFor } = require('./diagnostics.js');
 const { AiButton, buildFailurePrompt } = require('./ai.js');
 const { RUN_STATUS_TEXT, STEP_STATUS_TEXT, runTone, stepTone } = require('./state.js');
+const { tokenizeLine, detectLanguage } = require('./syntax.js');
+
+/**
+ * 已结束步骤的静态日志：按**与实时日志同一套语法着色**渲染，
+ * 避免同一份日志在「运行中」和「已结束」两种状态下观感不一致。
+ * 语言按内容自动判断（日志通常是构建输出，猜错只是配色不同，不影响可读）。
+ */
+function StaticLogView(props) {
+  const text = String(props.text || '');
+  const maxLines = props.maxLines || 400;
+  const all = text.split('\n');
+  const shown = all.length > maxLines ? all.slice(all.length - maxLines) : all;
+  const language = detectLanguage(text);
+  return h(
+    'div',
+    { className: 'dsh-devops-loglines', 'data-language': language },
+    shown.map((line, i) =>
+      h(
+        'div',
+        { key: i, className: 'dsh-devops-logline' },
+        tokenizeLine(line, language).map((token, j) =>
+          h('span', { key: j, className: 'dsh-devops-tok dsh-devops-tok-' + token.kind }, token.text),
+        ),
+      ),
+    ),
+  );
+}
 
 /** 步骤耗时：进行中按当前时间算，结束后用 finishedAt。 */
 function stepElapsed(step, now) {
   if (!step || !step.startedAt) return 0;
   return Math.max(0, (step.finishedAt || now) - step.startedAt);
+}
+
+/**
+ * 步骤详情悬浮卡片：与流水线详情页**同一套形态契约**（圆角悬浮卡片 + 三个关闭方式）。
+ *
+ * 用户要求「不要一处侧栏一处卡片」：运行页这里同样把形态挂在既有类名 +
+ * data-shape / data-variant / data-blur 属性上，视觉完全由 styles.js 决定。
+ */
+function StepDetailDrawer(props) {
+  const step = props.step || null;
+  const open = !!step;
+  const [tab, setTab] = useState('info');
+
+  // 打开时支持 Esc 关闭（Node 环境没有 document，跳过）
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const onKey = (event) => {
+      if (event && event.key === 'Escape' && props.onClose) props.onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      if (document && document.removeEventListener) document.removeEventListener('keydown', onKey);
+    };
+  }, [open, props.onClose]);
+
+  const infoActive = tab === 'info';
+  const status = step ? step.status : '';
+  const elapsed = step ? stepElapsed(step, props.now || Date.now()) : 0;
+  const infoEntries = step
+    ? [
+        ['步骤 id', h('span', { className: 'dsh-devops-monospace' }, step.id || '—')],
+        ['名称', step.name || '—'],
+        ['节点类型', h('span', { className: 'dsh-devops-monospace' }, step.node || '—')],
+        ['阶段', step.stage || '未分组'],
+        ['状态', STEP_STATUS_TEXT[step.status] || step.status || '—'],
+        ['服务器', step.server || '（默认）'],
+        ['退出码', step.exitCode === null || step.exitCode === undefined ? '—' : String(step.exitCode)],
+        ['耗时', elapsed ? fmtDuration(elapsed) : '—'],
+        ['尝试次数', step.attempt ? String(step.attempt) : '1'],
+        ['输出字节', step.bytes ? step.bytes + ' B' : '—'],
+        ['phase', step.phase || '—'],
+      ]
+    : [];
+
+  return h(
+    'div',
+    {
+      className: 'dsh-devops-drawer-layer',
+      'data-role': 'step-detail-drawer',
+      'data-shape': 'floating',
+      'data-open': open ? 'true' : 'false',
+      'data-tab': tab,
+      'data-status': status || 'idle',
+      'data-tone': status ? stepTone(status) : 'idle',
+      'aria-hidden': open ? 'false' : 'true',
+    },
+    h('div', {
+      className: 'dsh-devops-drawer-mask',
+      'data-role': 'step-drawer-mask',
+      'data-blur': 'true',
+      onClick: () => props.onClose && props.onClose(),
+    }),
+    h(
+      'aside',
+      {
+        className: 'dsh-devops-drawer',
+        'data-role': 'step-drawer-panel',
+        'data-variant': 'floating',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-label': '步骤详情',
+      },
+      h(
+        'div',
+        { className: 'dsh-devops-drawer-head' },
+        h('span', { className: 'dsh-devops-drawer-title dsh-devops-truncate' }, step ? step.name || step.id : ''),
+        step ? h('span', { className: 'dsh-devops-tag dsh-devops-monospace' }, step.node) : null,
+        step ? h(Chip, { tone: stepTone(step.status), dot: true }, STEP_STATUS_TEXT[step.status] || step.status) : null,
+        h('div', { className: 'dsh-devops-spacer' }),
+        h(Button, { variant: 'ghost', size: 'sm', icon: 'close', label: '关闭', title: '关闭（Esc）', onClick: () => props.onClose && props.onClose() }),
+      ),
+      h(
+        'div',
+        { className: 'dsh-devops-tabs', role: 'tablist', 'data-role': 'step-drawer-tabs' },
+        [{ id: 'info', label: '步骤信息' }, { id: 'log', label: '日志' }].map((item) =>
+          h(
+            'button',
+            {
+              key: item.id,
+              type: 'button',
+              role: 'tab',
+              className: 'dsh-devops-tab',
+              'data-role': 'step-drawer-tab',
+              'data-tab': item.id,
+              'data-active': tab === item.id ? 'true' : undefined,
+              'aria-selected': tab === item.id ? 'true' : 'false',
+              onClick: () => setTab(item.id),
+            },
+            item.label,
+          ),
+        ),
+      ),
+      h(
+        'div',
+        { className: 'dsh-devops-drawer-body' },
+        h('div', { 'data-role': 'step-drawer-view', 'data-view': 'info', hidden: !infoActive },
+          infoActive
+            ? h(
+                'div',
+                { className: 'dsh-devops-drawer-panel' },
+                h(
+                  'div',
+                  { className: 'dsh-devops-card', 'data-role': 'step-info-group' },
+                  h('div', { className: 'dsh-devops-card-head' }, h('span', { className: 'dsh-devops-card-title' }, '执行信息')),
+                  h(KV, { entries: infoEntries }),
+                ),
+                step && step.error
+                  ? h('div', { className: 'dsh-devops-card', 'data-role': 'step-error' },
+                      h('div', { className: 'dsh-devops-card-head' }, h('span', { className: 'dsh-devops-card-title' }, '错误')),
+                      h('div', { className: 'dsh-devops-drawer-raw dsh-devops-monospace', 'data-tone': 'error' }, String(step.error)))
+                  : null,
+              )
+            : null),
+        h('div', { 'data-role': 'step-drawer-view', 'data-view': 'log', hidden: infoActive },
+          infoActive
+            ? null
+            : h(LogPanel, { runId: props.runId, stepId: step ? step.id : '', live: !!props.live, meta: { stuckSilenceSec: props.stuckSilenceSec } })),
+      ),
+    ),
+  );
+}
+
+/** 一组步骤的整体状态：失败优先，其次运行中，再次排队，最后才是全部成功。 */
+function laneStatus(list) {
+  const items = list || [];
+  if (items.length === 0) return 'pending';
+  if (items.some((s) => s.status === 'failed')) return 'failed';
+  if (items.some((s) => s.status === 'running')) return 'running';
+  if (items.some((s) => s.status === 'queued' || s.status === 'pending')) return 'pending';
+  if (items.every((s) => s.status === 'success' || s.status === 'skipped')) return 'success';
+  return 'pending';
 }
 
 /** 单个步骤卡片：可展开实时日志。 */
@@ -4623,7 +8197,8 @@ function StepCard(props) {
 
   return h(
     'div',
-    { className: 'dsh-devops-stepcard', 'data-status': step.status },
+    // 状态色：data-status 为原始状态、data-tone 为语义色调，颜色一律交给 CSS
+    { className: 'dsh-devops-stepcard', 'data-status': step.status, 'data-tone': stepTone(step.status) },
     h(
       'div',
       { className: 'dsh-devops-stepcard-head', onClick: onToggle },
@@ -4644,8 +8219,29 @@ function StepCard(props) {
         step.bytes ? h('span', null, step.bytes + ' B') : null,
         isLive ? h('span', { style: { color: diag.stuck ? 'var(--dsw-alias-state-warn-primary)' : 'inherit' } }, diag.silentText) : null,
       ),
+      // 统一的「查看详情」入口：悬浮卡片展示步骤原信息与日志
+      props.onOpenDetail
+        ? h(Button, {
+            size: 'sm',
+            variant: 'ghost',
+            label: '详情',
+            title: '在悬浮卡片中查看该步骤的信息与日志',
+            onClick: (event) => {
+              if (event && event.stopPropagation) event.stopPropagation();
+              props.onOpenDetail(step);
+            },
+            style: { flex: 'none' },
+          })
+        : null,
       step.status === 'failed' && !isLive
-        ? h('span', { onClick: retryStep, style: { flex: 'none' } }, h(Button, { size: 'sm', icon: 'refresh', label: '重试此步' }))
+        ? h(Button, {
+            size: 'sm',
+            icon: 'refresh',
+            label: '重试此步',
+            title: '只重试这一步',
+            onClick: retryStep,
+            style: { flex: 'none' },
+          })
         : null,
     ),
     expanded
@@ -4677,11 +8273,11 @@ function StepCard(props) {
                 ),
                 h(
                   'div',
-                  { className: 'dsh-devops-logview' },
+                  { className: 'dsh-devops-logview', 'data-language': 'plain' },
                   loadingLogs
                     ? '加载日志中…'
                     : logs
-                      ? logs.split('\n').slice(-400).map((line, i) => h('div', { key: i, className: 'dsh-devops-logline' }, line))
+                      ? h(StaticLogView, { text: logs, maxLines: 400 })
                       : '该步骤没有日志输出',
                 ),
               ),
@@ -4695,7 +8291,11 @@ function RunDetail(props) {
   const runId = props.runId;
   const [run, setRun] = useState(null);
   const [error, setError] = useState('');
-  const [expanded, setExpanded] = useState('');
+  // 展开的步骤 id 列表。过去是「单个 id 字符串」，但阶段头按钮写的是「全部展开」，
+  // 实际只会展开第一条 —— 标签与行为不符，点了像没反应。
+  const [expanded, setExpanded] = useState([]);
+  // 悬浮详情卡片当前展示的步骤（null = 收起）
+  const [detailStep, setDetailStep] = useState(null);
   const [sseStatus, setSseStatus] = useState('idle');
   const [now, setNow] = useState(Date.now());
   const streamRef = useRef(null);
@@ -4752,6 +8352,19 @@ function RunDetail(props) {
     };
   }, [runId, live, load]);
 
+  /**
+   * 声明「本页自管滚动」：运行详情内部有自己的滚动区（阶段泳道 + 步骤日志），
+   * 外层 .dsh-devops-body 必须停止滚动，否则滚轮会带动整页、内部区域拿不到有界高度。
+   * 进入时 true、卸载时 false；app.js 依此设置 body 的 data-flush。
+   *
+   * 必须在下面的提前 return **之前**（hooks 不能条件执行，否则触发 React #310）。
+   */
+  useEffect(() => {
+    if (typeof props.onBodyFlush !== 'function') return undefined;
+    props.onBodyFlush(true);
+    return () => props.onBodyFlush(false);
+  }, [props.onBodyFlush]);
+
   // ⚠️ hooks 必须无条件执行：不能放在下面的提前 return 之后，
   // 否则「首次无数据 → 数据到达」两次渲染的 hook 数量不同，React 会抛
   // "Rendered more hooks than during the previous render"（#310）。
@@ -4774,6 +8387,21 @@ function RunDetail(props) {
     for (const step of stepList) out[step.status] = (out[step.status] || 0) + 1;
     return out;
   }, [stepList]);
+
+  /** 展开/收起单个步骤。 */
+  function toggleStep(id) {
+    setExpanded((prev) => (prev.indexOf(id) >= 0 ? prev.filter((x) => x !== id) : prev.concat([id])));
+  }
+
+  /** 展开/收起某个阶段下的全部步骤。 */
+  function toggleLane(list) {
+    const ids = list.map((s) => s.id);
+    setExpanded((prev) => {
+      const allOpen = ids.length > 0 && ids.every((id) => prev.indexOf(id) >= 0);
+      if (allOpen) return prev.filter((id) => ids.indexOf(id) < 0);
+      return prev.concat(ids.filter((id) => prev.indexOf(id) < 0));
+    });
+  }
 
   // hooks 全部执行完，现在才允许提前 return
   if (error) return h(Banner, { tone: 'error' }, error);
@@ -4806,14 +8434,46 @@ function RunDetail(props) {
 
   return h(
     'div',
-    null,
+    // 定位上下文：悬浮抽屉层是 absolute/inset:0，必须锚定在运行详情区域内
+    { className: 'dsh-devops-detail', 'data-role': 'run-detail' },
+    // 内部滚动区：外层 body 已 data-flush（不滚），运行详情的滚动由这里承担。
+    // 悬浮抽屉层必须留在滚动区**之外**，否则遮罩会随内容滚走、盖不住视口。
     h(
+      'div',
+      { className: 'dsh-devops-detail-scroll', 'data-role': 'run-detail-scroll' },
+      h(
       'div',
       { style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' } },
       h(Button, { size: 'sm', icon: 'chevron', label: '← 运行列表', onClick: props.onBack }),
       h('h2', { className: 'dsh-devops-title', style: { margin: 0 } }, run.id),
       h(Chip, { tone: runTone(run.status), dot: true }, RUN_STATUS_TEXT[run.status] || run.status),
-      h('span', { className: 'dsh-devops-hint' }, run.pipelineName || run.pipelineId),
+      run.pipelineId
+        ? h(
+            'span',
+            {
+              className: 'dsh-devops-link',
+              role: 'button',
+              tabIndex: 0,
+              title: '查看「' + (run.pipelineName || run.pipelineId) + '」的详情',
+              onClick: () => props.onOpenPipeline && props.onOpenPipeline(run.pipelineId),
+              onKeyDown: (event) => {
+                if (event && (event.key === 'Enter' || event.key === ' ')) {
+                  event.preventDefault();
+                  props.onOpenPipeline && props.onOpenPipeline(run.pipelineId);
+                }
+              },
+            },
+            run.pipelineName || run.pipelineId,
+          )
+        : h('span', { className: 'dsh-devops-hint' }, run.pipelineName || run.pipelineId),
+      run.pipelineId
+        ? h(Button, {
+            size: 'sm',
+            label: '编辑流水线',
+            title: '打开这条运行所用流水线的编辑器',
+            onClick: () => props.onEditPipeline && props.onEditPipeline(run.pipelineId),
+          })
+        : null,
       h('div', { className: 'dsh-devops-spacer' }),
       live ? h(Button, { size: 'sm', variant: 'danger', icon: 'close', label: '取消运行', onClick: cancel }) : null,
       failed > 0 ? h(Button, { size: 'sm', icon: 'refresh', label: '重跑全部', onClick: retry }) : null,
@@ -4888,18 +8548,29 @@ function RunDetail(props) {
         : lanes.map(([stage, list]) =>
             h(
               'div',
-              { key: stage || 'ungrouped', style: { marginBottom: '10px' } },
+              {
+                key: stage || 'ungrouped',
+                style: { marginBottom: '10px' },
+                // 注意：这里**不能**复用 .dsh-devops-column —— 那是横向编排的列，
+                // 带 width:236px / flex:0 0 auto，会把运行页泳道挤成窄列。
+                // 状态色改用头部状态点（data-tone）表达，布局保持原来的整宽泳道。
+                'data-role': 'run-lane',
+                'data-status': laneStatus(list),
+                'data-tone': stepTone(laneStatus(list)),
+              },
               h(
                 'div',
                 { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' } },
+                h(StatusDot, { tone: stepTone(laneStatus(list)), title: '该阶段整体状态：' + (STEP_STATUS_TEXT[laneStatus(list)] || laneStatus(list)) }),
                 h('span', { style: { fontSize: '12px', fontWeight: 500 } }, stage || '未分组'),
                 h('span', { className: 'dsh-devops-hint' }, list.length + ' 个步骤'),
                 h('div', { className: 'dsh-devops-spacer' }),
                 h(Button, {
                   size: 'sm',
                   variant: 'ghost',
-                  label: expanded ? '收起' : '全部展开',
-                  onClick: () => setExpanded(expanded ? '' : list[0] && list[0].id),
+                  label: list.length > 0 && list.every((s) => expanded.indexOf(s.id) >= 0) ? '全部收起' : '全部展开',
+                  title: '展开或收起该阶段的全部步骤',
+                  onClick: () => toggleLane(list),
                 }),
               ),
               list.map((step) =>
@@ -4908,18 +8579,31 @@ function RunDetail(props) {
                   step,
                   runId,
                   now,
-                  expanded: expanded === step.id,
-                  onToggle: () => setExpanded(expanded === step.id ? '' : step.id),
+                  expanded: expanded.indexOf(step.id) >= 0,
+                  onToggle: () => toggleStep(step.id),
                   stuckSilenceSec: (props.settings && props.settings.stuckSilenceSec) || 60,
                   server: (props.servers || []).find((s) => s.id === step.server),
                   toast: props.toast,
                   ctx: props.ctx,
                   onRetried: props.onReload,
+                  onOpenDetail: setDetailStep,
                 }),
               ),
             ),
           ),
     ),
+
+    ),
+
+    // 统一的悬浮详情卡片（与流水线详情页同一形态契约）——留在滚动区外
+    h(StepDetailDrawer, {
+      step: detailStep,
+      runId,
+      live: detailStep ? !!live : false,
+      stuckSilenceSec: (props.settings && props.settings.stuckSilenceSec) || 60,
+      now,
+      onClose: () => setDetailStep(null),
+    }),
   );
 }
 
@@ -4950,6 +8634,10 @@ function Runs(props) {
       settings: props.state.settings,
       onBack: () => setOpenId(''),
       onReload: props.onReload,
+      onEditPipeline: props.onEditPipeline,
+      onOpenPipeline: props.onOpenPipeline,
+      // 「本页自管滚动」的声明通道（app.js 由 Lead 提供，这里逐层透传）。
+      onBodyFlush: props.onBodyFlush,
     });
   }
 
@@ -4999,7 +8687,26 @@ function Runs(props) {
               const doneCount = steps.filter((s) => s.status && s.status !== 'running' && s.status !== 'pending').length;
               return h('tr', { key: run.id },
                 h('td', { className: 'dsh-devops-monospace' }, run.id),
-                h('td', null, run.pipelineName || run.pipelineId),
+                h('td', null,
+                  run.pipelineId && props.onOpenPipeline
+                    ? h(
+                        'span',
+                        {
+                          className: 'dsh-devops-link',
+                          role: 'button',
+                          tabIndex: 0,
+                          title: '查看「' + (run.pipelineName || run.pipelineId) + '」的详情',
+                          onClick: () => props.onOpenPipeline(run.pipelineId),
+                          onKeyDown: (event) => {
+                            if (event && (event.key === 'Enter' || event.key === ' ')) {
+                              event.preventDefault();
+                              props.onOpenPipeline(run.pipelineId);
+                            }
+                          },
+                        },
+                        run.pipelineName || run.pipelineId,
+                      )
+                    : run.pipelineName || run.pipelineId),
                 h('td', null, h(Chip, { tone: runTone(run.status), dot: true }, RUN_STATUS_TEXT[run.status] || run.status)),
                 h('td', null, doneCount + ' / ' + steps.length),
                 h('td', null, run.startedAt ? fmtDuration((run.finishedAt || nowTs) - run.startedAt) : '—'),
@@ -5014,7 +8721,10 @@ function Runs(props) {
 
 exports.Runs = Runs;
 exports.RunDetail = RunDetail;
+exports.StaticLogView = StaticLogView;
 exports.StepCard = StepCard;
+exports.StepDetailDrawer = StepDetailDrawer;
+exports.laneStatus = laneStatus;
 });
 
 __def("./page-servers.js", function (module, exports, require) {
@@ -5073,7 +8783,7 @@ function blankServer() {
     host: '',
     port: 22,
     user: '',
-    auth: { type: 'key', keyRef: '', passwordRef: '' },
+    auth: { type: 'key', keyRef: '', passwordRef: '', keyPath: '' },
     shell: '',
     workdir: '',
     tags: [],
@@ -5127,6 +8837,95 @@ function EnvPreview(props) {
         : null,
     ),
   );
+}
+
+/**
+ * 私钥文件选择（task-13）：文本输入 + 「浏览」按钮，复用既有 api.fsList。
+ *
+ * 为什么不用 fields.js 的 PathControl：
+ *  - PathControl 是**节点字段**控件，需要 field 描述符、serverField/resolveServer、
+ *    recent/remember 等一组 props；而这里是「服务器自身的认证配置」，不是节点字段，
+ *    硬套要伪造一堆 props，反而更脆；
+ *  - 本机私钥始终在**本机**（auth.keyPath 的语义就是宿主机路径），
+ *    因此浏览目标固定为 'local'，不需要 serverField 解析；
+ *  - 既有 .dsh-devops-dropdown 系列样式可直接复用，零新增 CSS。
+ *
+ * 浏览失败不影响手填：用户在任何情况下都能直接粘贴绝对路径。
+ */
+function KeyFileField(props) {
+  const [open, setOpen] = useState(false);
+  const [listing, setListing] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const value = props.value === undefined || props.value === null ? '' : String(props.value);
+  // 本机私钥固定浏览本机；不要用被编辑服务器的 id（那可能是远端 SSH 机）
+  const browseServer = 'local';
+
+  async function browse(path) {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.fsList(browseServer, path || value || '.');
+      setListing(result);
+      setOpen(true);
+    } catch (err) {
+      // 降级要可见：提示错误但仍让用户手填，不留死点击
+      setError(err.message || String(err));
+      setListing(null);
+      setOpen(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function pick(path) {
+    props.onChange(path);
+    setOpen(false);
+  }
+
+  function joinPath(base, name) {
+    if (!base || base === '.') return name;
+    const sep = base.indexOf('\\') !== -1 && base.indexOf('/') === -1 ? '\\' : '/';
+    return base.replace(/[\\/]+$/, '') + sep + name;
+  }
+
+  return h(Field, {
+    label: '私钥文件路径（本机）',
+    description: '留空则用下方凭据名。优先于凭据名；文件只支持本机路径',
+  },
+    h('div', null,
+      h('div', { className: 'dsh-devops-field-row' },
+        h('div', { style: { position: 'relative', flex: 1 } },
+          h(TextInput, {
+            value,
+            placeholder: pathPlaceholder('file'),
+            onChange: (v) => props.onChange(v),
+          }),
+          open
+            ? h('div', { className: 'dsh-devops-dropdown' },
+                h('div', { className: 'dsh-devops-dropdown-note' },
+                  listing ? (listing.path || value || '.') : (error || '无法读取目录')),
+                listing && listing.parent
+                  ? h('div', { className: 'dsh-devops-dropdown-row', onClick: () => browse(listing.parent) }, '..')
+                  : null,
+                listing && listing.entries && listing.entries.length
+                  ? listing.entries.map((entry) =>
+                      h('div', {
+                        key: entry.name,
+                        className: 'dsh-devops-dropdown-row',
+                        onClick: () => (entry.isDir ? browse(joinPath(listing.path, entry.name)) : pick(joinPath(listing.path, entry.name))),
+                      }, entry.name))
+                  : null,
+                h('div', { className: 'dsh-devops-dropdown-note', style: { borderTop: '0.5px solid var(--dsw-alias-border-l2)' } },
+                  '在本机中选择私钥文件'),
+              )
+            : null),
+        h(Button, { size: 'sm', icon: 'box', label: '浏览', busy, onClick: () => browse(value) }),
+        open ? h(Button, { size: 'sm', variant: 'ghost', label: '关闭', onClick: () => setOpen(false) }) : null,
+      ),
+      value ? h('div', { className: 'dsh-devops-hint', style: { marginTop: '4px' } },
+        '私钥内容只会在连接时读取，不会写入服务器配置，也不会出现在日志或导出里。') : null,
+    ));
 }
 
 /** 服务器编辑弹层。 */
@@ -5200,8 +8999,14 @@ function ServerModal(props) {
           (server.auth && server.auth.type) === 'password'
             ? h(Field, { label: '密码凭据名', description: '来自 ctx.credentials，不写明文' },
                 h(TextInput, { value: (server.auth && server.auth.passwordRef) || '', onChange: (v) => patch({ auth: Object.assign({}, server.auth, { passwordRef: v }) }) }))
-            : h(Field, { label: '私钥凭据名', description: '来自 ctx.credentials，不写明文' },
-                h(TextInput, { value: (server.auth && server.auth.keyRef) || '', onChange: (v) => patch({ auth: Object.assign({}, server.auth, { keyRef: v }) }) })),
+            : h('div', null,
+                h(KeyFileField, {
+                  server,
+                  value: (server.auth && server.auth.keyPath) || '',
+                  onChange: (v) => patch({ auth: Object.assign({}, server.auth, { keyPath: v }) }),
+                }),
+                h(Field, { label: '私钥凭据名', description: '来自 ctx.credentials，不写明文；上方填了文件时以文件优先' },
+                  h(TextInput, { value: (server.auth && server.auth.keyRef) || '', onChange: (v) => patch({ auth: Object.assign({}, server.auth, { keyRef: v }) }) }))),
         )
       : null,
     h(Field, {
@@ -5224,7 +9029,7 @@ function ServerModal(props) {
       { className: 'dsh-devops-field-row' },
       h(Field, { label: '允许在该机安装环境' }, h(Switch, { value: !!server.allowProvision, onChange: (v) => patch({ allowProvision: v }) })),
     ),
-    h('div', { className: 'dsh-devops-hint' }, '密钥值只从凭据服务解析，日志与导出均不会出现明文。'),
+    h('div', { className: 'dsh-devops-hint' }, '密钥值只从凭据服务或本机私钥文件读取，日志与导出均不会出现明文。'),
   );
 }
 
@@ -5389,6 +9194,8 @@ exports.Servers = Servers;
 exports.blankServer = blankServer;
 // 导出以下三项供测试直接验证（不影响界面行为）
 exports.ServerModal = ServerModal;
+// 导出私钥文件字段控件，供测试直接验证（不影响界面行为）
+exports.KeyFileField = KeyFileField;
 exports.workdirHint = workdirHint;
 exports.describeWorkdirSource = describeWorkdirSource;
 });
@@ -6053,32 +9860,86 @@ exports.Settings = Settings;
 
 __def("./statusbar.js", function (module, exports, require) {
 /**
- * 全局状态栏（shell.overlay）：活跃运行数、当前运行→当前步骤、实时耗时、
- * 服务器健康灯、失败徽标；单击跳转到对应运行。
+ * 全局状态栏（shell.overlay）：所有活跃运行的实时列表、当前步骤、实时耗时、
+ * 服务器健康灯、失败计数徽标；每条运行可单独点击进入。
  *
  * shell.overlay 是 list 槽且默认可点击穿透，因此外层 pointer-events:none，
  * 只有状态栏本体 auto——不会挡住应用的其它交互。
+ *
+ * 两个已修复的可用性缺陷（用户报告：状态栏「点不动、还硬显示失败的流水线」）：
+ *
+ * 1. 焦点语义：过去 pickFocus 在没有活跃运行时会退回「最近一次失败」的运行，
+ *    用户看到的就是一条与当下无关的失败记录，像是被硬编码。现在焦点**只**来自
+ *    活跃运行（running/queued）；完全空闲时给一句中性空闲态，失败只作为计数徽标。
+ * 2. 导航降级：onOpenRun / onNavigate 来自 src/client/index.js 的 navigationRegistry，
+ *    而它只有主面板挂载过才会被填充；面板没打开过时 nav 为 null，点击静默失效。
+ *    这里用共享 store 的 panelMounted 作为「导航是否可用」的信号，
+ *    不可用时渲染可见提示并在点击时给出说明，而不是留一个点不动的死按钮。
  */
-const { h, useEffect, useState, useMemo, useTick, fmtDuration } = require('./h.js');
-const { StatusDot } = require('./ui.js');
+const { h, useEffect, useState, useTick, fmtDuration } = require('./h.js');
+const { StatusDot, Button } = require('./ui.js');
 const { diagnoseStep } = require('./diagnostics.js');
 const { runTone, RUN_STATUS_TEXT } = require('./state.js');
 
-/** 找出当前该展示的运行：优先运行中，其次最近一次失败的。 */
-function pickFocus(runs) {
-  const running = runs.filter((r) => r.status === 'running' || r.status === 'queued');
-  if (running.length > 0) {
-    // 多个活跃运行时取开始最早的那个，展示最久运行
-    return running.reduce((a, b) => ((a.startedAt || Infinity) <= (b.startedAt || Infinity) ? a : b));
-  }
-  const failed = runs.filter((r) => r.status === 'failed');
-  if (failed.length > 0) {
-    return failed.reduce((a, b) => ((a.finishedAt || 0) >= (b.finishedAt || 0) ? a : b));
-  }
-  return runs[0] || null;
+/** 一条运行是否「活跃」（正在跑或排队）。 */
+function isActiveRun(run) {
+  return !!run && (run.status === 'running' || run.status === 'queued');
 }
 
-/** 运行里当前活跃的步骤（running 优先，否则取最后开始的）。 */
+/** 状态栏一次最多平铺几条活跃运行，其余折叠成「+N」。 */
+const MAX_VISIBLE_RUNS = 3;
+
+/**
+ * 状态栏要展示的全部信息（纯函数，便于直接单测）。
+ *
+ * 焦点**只**来自活跃运行，且取开始最早的那条（展示最久运行的进度）；
+ * 没有活跃运行就是空闲，绝不拿最近一次失败冒充当前状态。
+ */
+function statusBarModel(state) {
+  const runs = (state && state.runs) || [];
+  const active = runs.filter(isActiveRun).sort((a, b) => (a.startedAt || Infinity) - (b.startedAt || Infinity));
+  const failedCount = runs.filter((r) => r && r.status === 'failed').length;
+  const focus = active.length ? active[0] : null;
+  // 导航可用性：主面板挂载过，App 的 effect 才会 publishNavigation 填充注册表。
+  // panelMounted 是它在共享 store 上的等价信号。
+  const navReady = !!(state && (state.panelMounted || state.navRegistered));
+  return {
+    runs,
+    active,
+    failedCount,
+    focus,
+    navReady,
+    visible: active.slice(0, MAX_VISIBLE_RUNS),
+    overflow: Math.max(0, active.length - MAX_VISIBLE_RUNS),
+  };
+}
+
+/**
+ * 解析一次点击该做什么。
+ *
+ * nav 不可用时返回 blocked 与一句**可展示**的解释，而不是静默吞掉点击
+ * （这正是用户报告的「点了没反应」）。调用方负责把 message 渲染出来。
+ */
+function resolveNavTarget(nav, target) {
+  if (!nav || !nav.ready) {
+    return {
+      kind: 'blocked',
+      message: 'DevOps 面板还没打开过，导航暂时不可用：请先点侧边栏的「DevOps」图标打开面板，再从面板里进入。',
+    };
+  }
+  if (target && target.kind === 'run') {
+    if (typeof nav.onOpenRun !== 'function') {
+      return { kind: 'blocked', message: '打不开这次运行：宿主没有提供导航入口。' };
+    }
+    return { kind: 'run', runId: target.runId };
+  }
+  if (typeof nav.onNavigate !== 'function') {
+    return { kind: 'blocked', message: '切换页面失败：宿主没有提供导航入口。' };
+  }
+  return { kind: 'page', page: target && target.page };
+}
+
+/** 运行里当前活跃的步骤（running 优先，否则取第一个 pending）。 */
 function activeStep(run) {
   if (!run || !run.steps) return null;
   const steps = Object.keys(run.steps).map((id) => run.steps[id]);
@@ -6089,24 +9950,121 @@ function activeStep(run) {
   return null;
 }
 
+/** 事件冒泡到外层状态栏时不该再触发外层点击。 */
+function stopEvent(event) {
+  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+}
+
+/**
+ * 渲染一条活跃运行。返回的是普通元素（不是组件），因此可以直接被遍历/断言。
+ * showStep 为真时附带「当前步骤 → 名称」与卡住提示（只给焦点那条，避免整条太宽）。
+ */
+function runSegment(run, options) {
+  const opts = options || {};
+  const now = opts.now || Date.now();
+  const showStep = !!opts.showStep;
+  const step = showStep ? activeStep(run) : null;
+  const diag = step
+    ? diagnoseStep(step, { now, stuckSilenceSec: opts.stuckSilenceSec || 60 })
+    : null;
+  const elapsed = run.startedAt ? (run.finishedAt || now) - run.startedAt : 0;
+  const title = '点击查看这次运行：' + (run.pipelineName || run.pipelineId || run.id);
+
+  return h(
+    'span',
+    {
+      key: run.id,
+      className: 'dsh-devops-overlay-seg',
+      role: 'button',
+      tabIndex: 0,
+      title,
+      style: { cursor: 'pointer' },
+      onClick: (event) => {
+        stopEvent(event);
+        opts.onActivate && opts.onActivate({ kind: 'run', runId: run.id });
+      },
+      onKeyDown: (event) => {
+        if (event && (event.key === 'Enter' || event.key === ' ')) {
+          stopEvent(event);
+          if (event.preventDefault) event.preventDefault();
+          opts.onActivate && opts.onActivate({ kind: 'run', runId: run.id });
+        }
+      },
+    },
+    h('span', { className: 'dsh-devops-overlay-mono' }, run.pipelineName || run.pipelineId || run.id),
+    step ? h('span', { style: { color: 'var(--dsw-alias-label-tertiary)' } }, '→ ' + (step.name || step.id)) : null,
+    h('span', { className: 'dsh-devops-chip', 'data-tone': runTone(run.status) }, RUN_STATUS_TEXT[run.status] || run.status),
+    elapsed ? h('span', { className: 'dsh-devops-overlay-mono' }, fmtDuration(elapsed)) : null,
+    diag && diag.live && diag.silentText
+      ? h(
+          'span',
+          { style: { color: diag.stuck ? 'var(--dsw-alias-state-warn-primary)' : 'inherit' } },
+          h('span', { className: 'dsh-devops-overlay-mono' }, diag.silentText),
+        )
+      : null,
+  );
+}
+
 function StatusBar(props) {
-  const state = props.state;
-  const runs = state.runs || [];
+  const state = props.state || {};
   const [hidden, setHidden] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [notice, setNotice] = useState('');
   useTick(true);
 
   const enabled = !(state.settings && state.settings.statusBar === false);
-  if (!enabled || hidden) return null;
+  const model = statusBarModel(state);
+  const nav = {
+    ready: model.navReady && typeof props.onOpenRun === 'function',
+    onOpenRun: props.onOpenRun,
+    onNavigate: props.onNavigate,
+  };
 
-  const active = runs.filter((r) => r.status === 'running' || r.status === 'queued');
-  const failedCount = runs.filter((r) => r.status === 'failed').length;
+  // 提示用完自动消失，免得一直占着状态栏
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(''), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  /** 统一的点击入口：能导航就导航，不能导航就把原因显示出来。 */
+  function dispatch(target) {
+    const action = resolveNavTarget(nav, target);
+    if (action.kind === 'blocked') {
+      setNotice(action.message);
+      return;
+    }
+    if (action.kind === 'run') nav.onOpenRun(action.runId);
+    else nav.onNavigate(action.page);
+  }
+
+  // —— 以下为提前 return，所有 hook 必须已经执行完毕 ——
+  if (!enabled) return null;
+
+  // 收起态：保留一个最小的「重新打开」入口。
+  // （旧版只能右键收起、收起后无法恢复，这是用户说「移不动」的来源。）
+  if (hidden) {
+    return h(
+      'div',
+      { className: 'dsh-devops-root dsh-devops-root--bare dsh-devops-overlay' },
+      h(
+        'div',
+        { className: 'dsh-devops-overlay-bar', title: 'DevOps 状态栏已收起' },
+        h(StatusDot, { tone: model.active.length ? 'busy' : 'idle' }),
+        h('span', null, 'DevOps'),
+        h(Button, {
+          size: 'sm',
+          variant: 'ghost',
+          label: '显示状态栏',
+          title: '重新展开右下角的 DevOps 状态栏',
+          onClick: () => setHidden(false),
+        }),
+      ),
+    );
+  }
+
   const servers = state.servers || [];
-  const focus = pickFocus(runs);
-  const step = activeStep(focus);
   const now = Date.now();
-
-  const diag = step ? diagnoseStep(step, { now, stuckSilenceSec: (state.settings && state.settings.stuckSilenceSec) || 60 }) : null;
-  const elapsed = focus && focus.startedAt ? (focus.finishedAt || now) - focus.startedAt : 0;
 
   // 服务器健康：有任何探测失败就是 error；否则有服务器就是 ok
   const healthTone = servers.some((s) => s.probe && s.probe.error)
@@ -6120,54 +10078,123 @@ function StatusBar(props) {
 
   const segments = [];
 
+  // 1) 活跃计数
   segments.push(
     h(
       'span',
       { className: 'dsh-devops-overlay-seg', key: 'active' },
-      h(StatusDot, { tone: active.length ? 'busy' : 'idle' }),
-      h('span', null, active.length ? active.length + ' 个运行中' : '空闲'),
+      h(StatusDot, { tone: model.active.length ? 'busy' : 'idle' }),
+      h('span', null, model.active.length ? model.active.length + ' 个运行中' : '空闲'),
     ),
   );
 
-  if (focus) {
-    const tone = runTone(focus.status);
+  // 2) 空闲态：一句中性描述。失败运行绝不顶上来充当「当前」。
+  if (model.active.length === 0) {
     segments.push(
       h(
         'span',
-        { className: 'dsh-devops-overlay-seg', key: 'focus' },
-        h('span', { className: 'dsh-devops-overlay-mono' }, focus.pipelineName || focus.pipelineId || focus.id),
-        step ? h('span', { style: { color: 'var(--dsw-alias-label-tertiary)' } }, '→ ' + (step.name || step.id)) : null,
-        h('span', { className: 'dsh-devops-chip', 'data-tone': tone }, RUN_STATUS_TEXT[focus.status] || focus.status),
+        { className: 'dsh-devops-overlay-seg', key: 'idle' },
+        h('span', { style: { color: 'var(--dsw-alias-label-tertiary)' } }, '当前没有运行中的流水线'),
       ),
     );
-    if (elapsed) {
-      segments.push(
-        h('span', { className: 'dsh-devops-overlay-seg', key: 'elapsed' },
-          h('span', { className: 'dsh-devops-overlay-mono' }, fmtDuration(elapsed))),
-      );
-    }
-    if (diag && diag.live && diag.silentText) {
-      segments.push(
-        h(
-          'span',
-          { className: 'dsh-devops-overlay-seg', key: 'silent', style: { color: diag.stuck ? 'var(--dsw-alias-state-warn-primary)' : 'inherit' } },
-          h('span', { className: 'dsh-devops-overlay-mono' }, diag.silentText),
-        ),
-      );
-    }
   }
 
+  // 3) 所有活跃运行，逐条可点
+  const listed = showAll ? model.active : model.visible;
+  for (const run of listed) {
+    segments.push(runSegment(run, {
+      now,
+      showStep: !showAll && run === model.focus,
+      stuckSilenceSec: (state.settings && state.settings.stuckSilenceSec) || 60,
+      onActivate: dispatch,
+    }));
+  }
+  if (model.overflow > 0) {
+    segments.push(
+      h(
+        'span',
+        { className: 'dsh-devops-overlay-seg', key: 'more' },
+        h(Button, {
+          size: 'sm',
+          variant: 'ghost',
+          label: showAll ? '收起' : '+' + model.overflow,
+          title: showAll ? '只显示最近 ' + MAX_VISIBLE_RUNS + ' 条' : '还有 ' + model.overflow + ' 个活跃运行',
+          onClick: (event) => {
+            stopEvent(event);
+            setShowAll(!showAll);
+          },
+        }),
+      ),
+    );
+  }
+
+  // 4) 服务器健康
   segments.push(
     h('span', { className: 'dsh-devops-overlay-seg', key: 'health' },
       h(StatusDot, { tone: healthTone, title: healthTitle })),
   );
 
-  if (failedCount > 0) {
+  // 5) 失败只作为计数徽标，并且可点（跳运行列表）
+  if (model.failedCount > 0) {
     segments.push(
-      h('span', { className: 'dsh-devops-overlay-seg', key: 'failed' },
-        h('span', { className: 'dsh-devops-chip', 'data-tone': 'error' }, failedCount + ' 失败')),
+      h(
+        'span',
+        {
+          key: 'failed',
+          className: 'dsh-devops-overlay-seg',
+          role: 'button',
+          tabIndex: 0,
+          style: { cursor: 'pointer' },
+          title: '有 ' + model.failedCount + ' 次运行失败，点击查看运行列表',
+          onClick: (event) => {
+            stopEvent(event);
+            dispatch({ kind: 'page', page: 'runs' });
+          },
+        },
+        h('span', { className: 'dsh-devops-chip', 'data-tone': 'error' }, model.failedCount + ' 失败'),
+      ),
     );
   }
+
+  // 6) 导航不可用时始终给出可见提示（点击时还会追加具体原因）
+  if (!nav.ready) {
+    segments.push(
+      h(
+        'span',
+        { className: 'dsh-devops-overlay-seg', key: 'navhint', title: 'DevOps 面板还没打开过，状态栏的跳转暂时不可用' },
+        h('span', { className: 'dsh-devops-chip', 'data-tone': 'warn' }, '面板未打开'),
+      ),
+    );
+  }
+
+  // 7) 点击降级说明
+  if (notice) {
+    segments.push(
+      h(
+        'span',
+        { className: 'dsh-devops-overlay-seg', key: 'notice', role: 'status' },
+        h('span', { className: 'dsh-devops-chip', 'data-tone': 'warn' }, notice),
+      ),
+    );
+  }
+
+  // 8) 显式收起控件（右键仍然可用，但不再是唯一入口）
+  segments.push(
+    h(
+      'span',
+      { className: 'dsh-devops-overlay-seg', key: 'collapse' },
+      h(Button, {
+        size: 'sm',
+        variant: 'ghost',
+        label: '收起',
+        title: '收起状态栏（收起后可点「显示状态栏」恢复）',
+        onClick: (event) => {
+          stopEvent(event);
+          setHidden(true);
+        },
+      }),
+    ),
+  );
 
   return h(
     'div',
@@ -6176,14 +10203,14 @@ function StatusBar(props) {
       'div',
       {
         className: 'dsh-devops-overlay-bar',
-        'data-clickable': focus ? 'true' : undefined,
-        title: focus ? '点击查看这次运行' : 'DevOps 状态',
+        'data-clickable': model.focus ? 'true' : undefined,
+        title: model.focus ? '点击查看最久运行的那次运行' : 'DevOps 状态',
         onClick: () => {
-          if (focus) props.onOpenRun(focus.id);
-          else props.onNavigate('overview');
+          if (model.focus) dispatch({ kind: 'run', runId: model.focus.id });
+          else dispatch({ kind: 'page', page: 'overview' });
         },
-        onContextMenu: (e) => {
-          e.preventDefault();
+        onContextMenu: (event) => {
+          if (event && event.preventDefault) event.preventDefault();
           setHidden(true);
         },
       },
@@ -6193,6 +10220,12 @@ function StatusBar(props) {
 }
 
 exports.StatusBar = StatusBar;
+exports.statusBarModel = statusBarModel;
+exports.resolveNavTarget = resolveNavTarget;
+exports.runSegment = runSegment;
+exports.isActiveRun = isActiveRun;
+exports.activeStep = activeStep;
+exports.MAX_VISIBLE_RUNS = MAX_VISIBLE_RUNS;
 });
 
 __def("./app.js", function (module, exports, require) {
@@ -6271,9 +10304,68 @@ function InlineStatus(props) {
   );
 }
 
+/**
+ * 视图状态的持久化键（sessionStorage）。
+ *
+ * 用户抱怨「每次离开 devops 界面再回来，之前的状态全部消失了，从概况重新开始」——
+ * 根因是面板随侧边栏 slot 卸载，组件内 useState 全部清零。这里把**视图位置**
+ * （当前页签、正在编辑/查看的流水线 id）存下来，重进时恢复；
+ * 只存轻量标记，不存数据本身，恢复后仍按 id 重新拉取最新数据。
+ */
+const VIEW_KEY = 'dsh-devops.view';
+
+/** 安全读取视图记忆（隐私模式 / 无 storage 时降级为 null）。 */
+function readViewState() {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(VIEW_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 安全写入视图记忆。 */
+function writeViewState(patch) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    const current = readViewState() || {};
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify(Object.assign({}, current, patch)));
+  } catch {
+    /* 存不了就算了，不影响功能 */
+  }
+}
+
+/** 读取「上次正在编辑的流水线与选中节点」，供页面恢复视图位置。 */
+function readEditMemory() {
+  const view = readViewState();
+  if (!view || typeof view !== 'object') return null;
+  return {
+    pipelineId: typeof view.editPipelineId === 'string' ? view.editPipelineId : '',
+    jobId: typeof view.editJobId === 'string' ? view.editJobId : '',
+  };
+}
+
+/** 记住「正在编辑的流水线与选中节点」（只存 id，数据仍按 id 现取）。 */
+function rememberEdit(pipelineId, jobId) {
+  writeViewState({
+    editPipelineId: pipelineId || '',
+    editJobId: jobId || '',
+  });
+}
+
 function App(props) {
   const ctx = props.ctx;
-  const [page, setPage] = useState(props.initialPage || 'overview');
+  const remembered = readViewState();
+  const [page, setPage] = useState(props.initialPage || (remembered && remembered.page) || 'overview');
+  /**
+   * 页面自己声明「本页内容自行滚动，外层不要滚」。
+   * styles.js 里 .dsh-devops-body[data-flush="true"] 早就定义了，但此前**无人设置**，
+   * 导致编辑页整页滚动、画布与节点面板无法各自滚动（用户抱怨的滚轮串区）。
+   */
+  const [bodyFlush, setBodyFlush] = useState(false);
   const [toastNode, toast] = useToast();
   const [initialAction, setInitialAction] = useState(props.initialAction || null);
   const [initialRunId, setInitialRunId] = useState(props.initialRunId || '');
@@ -6281,6 +10373,26 @@ function App(props) {
 
   const store = sharedStore;
   const state = useStore(store);
+
+  /**
+   * 字段控件的数据上下文：只放「服务器 / 环境变量组 / 脚本片段 / 默认服务器」。
+   *
+   * 不能把宿主 ctx 原样传下去 —— 宿主 ctx 是 Cordis context，读取未 inject
+   * 的服务属性会抛 `cannot get property "snippets" without inject`，
+   * 点开含引用字段的节点（如 shell.exec 的「引用脚本片段」）就会整块报错。
+   */
+  const fieldCtx = useMemo(
+    () => ({
+      servers: state.servers || [],
+      envsets: state.envsets || [],
+      snippets: state.snippets || [],
+      // 流水线候选：pipeline.call 节点的「子流水线」字段要能下拉选择 + 模糊匹配，
+      // 因此把列表一并下发（列表接口不含 stages，载荷很轻）。
+      pipelines: state.pipelines || [],
+      defaultServer: (state.settings && state.settings.defaultServer) || 'local',
+    }),
+    [state.servers, state.envsets, state.snippets, state.pipelines, state.settings],
+  );
 
   /** 全局刷新：并行拉取所有列表，任一失败不影响其它。 */
   const reload = useCallback(async () => {
@@ -6349,6 +10461,7 @@ function App(props) {
   const navigate = useCallback(
     (next, action) => {
       setPage(next);
+      writeViewState({ page: next });
       setInitialAction(action || null);
       setQuery('');
       if (action && action.runId) setInitialRunId(action.runId);
@@ -6365,15 +10478,29 @@ function App(props) {
     [],
   );
 
-  // 应用外壳把「跳转」能力交给状态栏（它在 shell.overlay 里，独立于本面板）
+  // 应用外壳把「跳转」能力交给状态栏（它在 shell.overlay 里，独立于本面板）。
+  // 同时把「导航已注册」写进共享 store：状态栏据此判断点击能否生效，
+  // 不能生效时给可见提示，而不是留一个点不动的死按钮。
   useEffect(() => {
-    if (props.registerNavigation) props.registerNavigation({ navigate, openRun });
-  }, [navigate, openRun]);
+    if (!props.registerNavigation) return;
+    props.registerNavigation({ navigate, openRun });
+    store.setState({ navRegistered: true });
+  }, [navigate, openRun, store]);
+
+  // 页面通过该回调声明是否需要「外层不滚动」（编辑器/运行详情这类内部有滚动区的页面）。
+  useEffect(() => {
+    writeViewState({ page });
+  }, [page]);
 
   const pageProps = {
     state,
     toast,
     ctx,
+    fieldCtx,
+    onBodyFlush: setBodyFlush,
+    remembered,
+    editMemory: readEditMemory(),
+    rememberEdit,
     onReload: reload,
     recent,
     remember,
@@ -6382,7 +10509,10 @@ function App(props) {
     initialAction,
     initialRunId,
     onTemplatesChanged: reload,
-    onOpenPipeline: (id) => navigate('pipelines', { edit: id }),
+    // 打开某条流水线：进详情（看定义/阶段/最近运行，并从详情进编辑）。
+    onOpenPipeline: (id) => navigate('pipelines', { detail: id }),
+    // 直接进某条流水线的编辑器（运行详情里的「编辑流水线」用）。
+    onEditPipeline: (id) => navigate('pipelines', { edit: id }),
     initialServerId: initialAction && initialAction.serverId,
   };
 
@@ -6445,7 +10575,7 @@ function App(props) {
       'div',
       { className: 'dsh-devops-main' },
       h(InlineStatus, { state }),
-      h('div', { className: 'dsh-devops-body' }, content),
+      h('div', { className: 'dsh-devops-body', 'data-flush': bodyFlush ? 'true' : undefined }, content),
     ),
     toastNode,
   );

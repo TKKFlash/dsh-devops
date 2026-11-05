@@ -11,6 +11,21 @@ const { Canvas, makeId } = require('./canvas.js');
 const { AiButton, buildPipelinePrompt } = require('./ai.js');
 const { api } = require('./api.js');
 
+/** 检查器宽度约束（px）：可拖拽区间与默认值（「流水线设置」侧栏用）。 */
+const INSPECTOR_MIN = 260;
+const INSPECTOR_MAX = 720;
+const INSPECTOR_DEFAULT = 360;
+
+/**
+ * 节点编辑浮层宽度（px）：默认取用户要求的舒适区间（420~520），
+ * 并可拖拽左边缘调宽（保留用户上轮要过的「可拉宽」能力，但不是主要交互）。
+ */
+const SHEET_MIN = 320;
+const SHEET_MAX = 1100;
+// 默认宽度调大：用户反馈「编辑框默认要更宽一点」——460px 下字段名与控件挤在一起，
+// 长脚本也看不清。620px 能舒服放下标签+输入，同时不遮住画布内容。
+const SHEET_DEFAULT = 620;
+
 const CATEGORY_TEXT = {
   execute: '执行',
   file: '文件',
@@ -57,7 +72,7 @@ function Palette(props) {
     h(
       'div',
       { className: 'dsh-devops-palette-scroll' },
-      h('div', { className: 'dsh-devops-hint', style: { margin: '4px 2px 6px' } }, '点击节点加入画布（加入最后/选中阶段）'),
+      h('div', { className: 'dsh-devops-hint', style: { margin: '4px 2px 6px' } }, '点击节点加入画布（加入选中的列，否则放入最后一列）'),
       filtered.map(([cat, list]) =>
         h(
           'div',
@@ -142,6 +157,22 @@ function Inspector(props) {
     return h(
       'div',
       { className: 'dsh-devops-inspector' },
+      props.hideHead ? null : h(
+      'div',
+      { className: 'dsh-devops-inspector-head' },
+      h('span', { className: 'dsh-devops-inspector-head-title' }, '流水线设置'),
+      h('div', { className: 'dsh-devops-spacer' }),
+      props.onCollapse
+        ? h(Button, {
+            size: 'sm',
+            variant: 'ghost',
+            icon: 'chevron',
+            'data-role': 'inspector-collapse',
+            title: '收起检查器',
+            onClick: props.onCollapse,
+          })
+        : null,
+    ),
       h(
         'div',
         { className: 'dsh-devops-inspector-scroll' },
@@ -220,6 +251,23 @@ function Inspector(props) {
   return h(
     'div',
     { className: 'dsh-devops-inspector' },
+    props.hideHead ? null : h(
+      'div',
+      { className: 'dsh-devops-inspector-head' },
+      h('span', { className: 'dsh-devops-inspector-head-title dsh-devops-truncate' }, node ? node.title || job.node : job.node),
+      h('span', { className: 'dsh-devops-tag dsh-devops-monospace' }, job.id),
+      h('div', { className: 'dsh-devops-spacer' }),
+      props.onCollapse
+        ? h(Button, {
+            size: 'sm',
+            variant: 'ghost',
+            icon: 'chevron',
+            'data-role': 'inspector-collapse',
+            title: '收起检查器',
+            onClick: props.onCollapse,
+          })
+        : null,
+    ),
     h(
       'div',
       { className: 'dsh-devops-inspector-scroll' },
@@ -290,7 +338,7 @@ function Inspector(props) {
                   field,
                   value: values[field.name],
                   onChange: (v) => setField(field.name, v),
-                  ctx: props.ctx,
+                  ctx: props.fieldCtx,
                   serverId: job.server || (props.pipeline.defaults && props.pipeline.defaults.server),
                   resolveServer: (serverField) => {
                     if (!serverField) return job.server || (props.pipeline.defaults && props.pipeline.defaults.server);
@@ -485,6 +533,166 @@ function RunModal(props) {
  * 编辑器主体。
  * props: { pipeline, onChange, nodes, servers, ctx, toast, onSave, onRun, onReload, recent, remember }
  */
+
+/**
+ * 节点编辑浮层：**覆盖在编排画布之上**的圆角卡片，而不是占一栏的固定检查器。
+ *
+ * 用户要求（原话）：「点击节点之后虚化背景……去点击编辑层之外的地方，
+ * 编辑窗口会自动保存内容收起来。」因此：
+ *  - 有选中节点时浮出（遮罩虚化 + elevation 阴影），**覆盖而非挤压**画布；
+ *  - 点浮层外部（遮罩）→ 先提交/保存再收起；Esc 同样关闭；
+ *  - 浮层内沿用 Inspector 的全部字段控件，不丢任何编辑能力；
+ *  - 左边缘可拖拽调宽（附加能力；默认 SHEET_DEFAULT，用户不需要拉也能用）。
+ *
+ * 与「查看节点信息」（详情页只读抽屉）区分：这里是**可编辑**的编排浮层。
+ */
+function NodeEditSheet(props) {
+  const job = props.job || null;
+  const open = !!job;
+  const [width, setWidth] = useState(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('dsh-devops.sheetWidth')) : 0;
+      return saved >= SHEET_MIN && saved <= SHEET_MAX ? saved : SHEET_DEFAULT;
+    } catch {
+      return SHEET_DEFAULT;
+    }
+  });
+  const dragRef = useRef(null);
+
+  function persistWidth(value) {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem('dsh-devops.sheetWidth', String(Math.round(value)));
+    } catch {
+      /* 隐私模式等场景存不了，忽略 */
+    }
+  }
+
+  /** 左边缘拖拽：向左拖变宽（浮层贴右侧）。 */
+  function startResize(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (event && event.stopPropagation) event.stopPropagation();
+    const startX = event && event.clientX !== undefined ? event.clientX : 0;
+    const startWidth = width;
+    let latest = startWidth;
+    dragRef.current = { startX, startWidth };
+    const onMove = (e) => {
+      const x = e && e.clientX !== undefined ? e.clientX : startX;
+      const next = Math.max(SHEET_MIN, Math.min(SHEET_MAX, startWidth - (x - startX)));
+      latest = next;
+      setWidth(next);
+    };
+    const onUp = () => {
+      if (typeof window === 'undefined') return;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      // 抬手时才落盘，避免拖动过程中反复写 localStorage
+      persistWidth(latest);
+      dragRef.current = null;
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+  }
+
+  // Esc 关闭（与点外部同一条路径：先保存再收起）
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const onKey = (event) => {
+      if (event && event.key === 'Escape' && props.onClose) props.onClose('esc');
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      if (document && document.removeEventListener) document.removeEventListener('keydown', onKey);
+    };
+  }, [open, props.onClose]);
+
+  return h(
+    'div',
+    {
+      className: 'dsh-devops-editor-sheet-layer',
+      'data-role': 'node-edit-layer',
+      // 浮层形态：覆盖画布，不挤压布局
+      'data-shape': 'floating',
+      'data-open': open ? 'true' : 'false',
+      'aria-hidden': open ? 'false' : 'true',
+    },
+    // 遮罩：背景虚化；点它就是「点编辑层之外」→ 自动保存并收起
+    h('div', {
+      className: 'dsh-devops-editor-sheet-mask',
+      'data-role': 'node-edit-mask',
+      'data-blur': 'true',
+      onClick: () => props.onClose && props.onClose('mask'),
+    }),
+    h(
+      'aside',
+      {
+        className: 'dsh-devops-editor-sheet',
+        'data-role': 'node-edit-sheet',
+        'data-variant': 'floating',
+        style: { width: width + 'px' },
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-label': '编辑节点',
+        onClick: (event) => {
+          // 点浮层内部不应关闭
+          if (event && event.stopPropagation) event.stopPropagation();
+        },
+      },
+      // 左边缘拖拽手柄（附加能力）
+      h('div', {
+        className: 'dsh-devops-editor-sheet-resizer',
+        'data-role': 'node-edit-resizer',
+        title: '拖拽调整浮层宽度',
+        onMouseDown: startResize,
+      }),
+      h(
+        'div',
+        { className: 'dsh-devops-editor-sheet-head' },
+        h('span', { className: 'dsh-devops-editor-sheet-title dsh-devops-truncate' },
+          job ? (job.name || job.id) : ''),
+        job ? h('span', { className: 'dsh-devops-tag dsh-devops-monospace' }, job.node) : null,
+        h('div', { className: 'dsh-devops-spacer' }),
+        h(Button, {
+          size: 'sm',
+          variant: 'ghost',
+          icon: 'close',
+          label: '完成',
+          'data-role': 'node-edit-close',
+          title: '保存并收起（Esc）',
+          onClick: () => props.onClose && props.onClose('button'),
+        }),
+      ),
+      h(
+        'div',
+        { className: 'dsh-devops-editor-sheet-body' },
+        open
+          ? h(Inspector, {
+              job: props.job,
+              node: props.node,
+              pipeline: props.pipeline,
+              servers: props.servers,
+              ctx: props.ctx,
+              fieldCtx: props.fieldCtx,
+              toast: props.toast,
+              onPatchJob: props.onPatchJob,
+              onPatchPipeline: props.onPatchPipeline,
+              onReload: props.onReload,
+              recent: props.recent,
+              remember: props.remember,
+              hideHead: true,
+            })
+          : null,
+      ),
+      h(
+        'div',
+        { className: 'dsh-devops-editor-sheet-foot' },
+        h('span', { className: 'dsh-devops-hint' }, '改动已即时保存；点浮层外部或按 Esc 收起'),
+      ),
+    ),
+  );
+}
+
 function PipelineEditor(props) {
   const pipeline = props.pipeline;
   const [selectedJob, setSelectedJob] = useState(null);
@@ -494,12 +702,87 @@ function PipelineEditor(props) {
   const [busy, setBusy] = useState(false);
   const addNodeRef = useRef(null);
 
+  /**
+   * 检查器宽度：可拖拽调整并持久化到 localStorage。
+   * 用户抱怨「这么窄一个，拉也不能拉宽」——右侧面板固定 288px 且不可调，
+   * 写长脚本时完全不够用，因此这里给出可拖拽的边缘 + 收起/展开。
+   */
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('dsh-devops.inspectorWidth')) : 0;
+      return saved >= INSPECTOR_MIN && saved <= INSPECTOR_MAX ? saved : INSPECTOR_DEFAULT;
+    } catch {
+      return INSPECTOR_DEFAULT;
+    }
+  });
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const dragRef = useRef(null);
+
+  /**
+   * 本页自管滚动：挂载时告诉宿主「body 不要再整页滚」（app.js 的 onBodyFlush），
+   * 卸载时恢复。否则子区域拿不到有界高度，画布的横向滚动条会被推到页面底部。
+   */
+  useEffect(() => {
+    if (typeof props.onBodyFlush !== 'function') return undefined;
+    props.onBodyFlush(true);
+    return () => props.onBodyFlush(false);
+  }, [props.onBodyFlush]);
+  /**
+   * 本次浮层会话里是否发生过编辑。
+   * 字段控件是「改一次提交一次」（props.onChange 直接写上层 draft），
+   * 所以关闭时内容本来就不会丢；这里额外记一笔，用于关闭时做一次显式的
+   * **最终提交（flush）**，把「点外部 = 自动保存并收起」落成可观察的行为。
+   */
+  const sheetDirtyRef = useRef(false);
+
+  function persistWidth(width) {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem('dsh-devops.inspectorWidth', String(Math.round(width)));
+    } catch {
+      /* 隐私模式等场景下存不了，忽略即可 */
+    }
+  }
+
+  /** 拖拽分隔条：向左拖变宽、向右拖变窄（面板在右侧）。 */
+  function startResize(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    const startX = event && event.clientX !== undefined ? event.clientX : 0;
+    const startWidth = inspectorWidth;
+    dragRef.current = { startX, startWidth };
+
+    const onMove = (e) => {
+      const x = e && e.clientX !== undefined ? e.clientX : startX;
+      const next = Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, startWidth - (x - startX)));
+      setInspectorWidth(next);
+    };
+    const onUp = () => {
+      if (typeof window === 'undefined') return;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      dragRef.current = null;
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+  }
+
+  /** 双击分隔条：在默认宽度与最大化之间切换（快捷操作）。 */
+  function toggleWide() {
+    const next = inspectorWidth >= INSPECTOR_MAX - 20 ? INSPECTOR_DEFAULT : INSPECTOR_MAX;
+    setInspectorWidth(next);
+    persistWidth(next);
+  }
+
   const jobIndex = useMemo(() => {
     const map = new Map();
     for (const stage of (pipeline.stages || [])) for (const job of stage.jobs || []) map.set(job.id, job);
     return map;
   }, [pipeline]);
 
+  // 删除阶段（或节点）后，原来的 selectedJob 可能已不在 jobIndex 里。
+  // 这里天然安全降级：selected 为 null → Inspector 回落到「流水线设置」，
+  // 顶部也不会再对一个不存在的节点显示「复制/删除节点」。不要改成抛错或保留旧对象。
   const selected = selectedJob ? jobIndex.get(selectedJob) : null;
   const selectedNode = selected ? (props.nodes || []).find((n) => n.type === selected.node) : null;
 
@@ -508,12 +791,41 @@ function PipelineEditor(props) {
   }
 
   function patchJob(patch) {
+    // 契约 §2.1：needs（DAG 调度）与阶段 parallel 不得混用。
+    // 画布侧已拦住「先有 needs 再开并行」，这里补上反方向：已有并行阶段时不再允许新增 needs。
+    if (patch.needs && patch.needs.length) {
+      const parallelStage = (pipeline.stages || []).find((s) => s.parallel);
+      if (parallelStage) {
+        props.toast.warn(
+          '阶段「' + (parallelStage.name || parallelStage.id) + '」已开启并行，契约不允许再声明 needs（DAG 调度）。请先关闭该阶段的并行。',
+        );
+        return;
+      }
+    }
     const next = clone(pipeline);
     for (const stage of next.stages || []) {
       const idx = (stage.jobs || []).findIndex((j) => j.id === selectedJob);
       if (idx >= 0) stage.jobs[idx] = Object.assign(stage.jobs[idx], patch);
     }
+    sheetDirtyRef.current = true;
     props.onChange(next);
+  }
+
+  /**
+   * 收起编辑浮层。用户要求「点编辑层之外 → 自动保存内容收起来」：
+   * 字段改动本来就是逐次通过 props.onChange 提交的（上层会写进 draft），
+   * 这里再做一次「落定」——把当前 pipeline 交给 onSave 的轻量提交路径前先保证
+   * 没有未提交的本地草稿；同时把浮层状态清空，回到纯画布视图。
+   */
+  function closeSheet(reason) {
+    // 点浮层外部 / Esc / 点「完成」都走这里：
+    // 有过编辑就做一次最终提交（flush），保证「自动保存」而不是「丢弃」。
+    if (sheetDirtyRef.current) {
+      props.onChange(clone(pipeline));
+      sheetDirtyRef.current = false;
+    }
+    setSelectedJob(null);
+    if (props.onSheetClose) props.onSheetClose(reason || 'close');
   }
 
   function deleteJob() {
@@ -614,11 +926,13 @@ function PipelineEditor(props) {
       }),
       h(
         'div',
-        { style: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 } },
+        // minHeight:0 必须显式给：flex 子项默认 min-height:auto 会拒绝收缩，
+        // 画布会被内容撑高、自身 overflow:auto 失效（横向滚动条被推到页面底部够不着）。
+        { style: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 } },
         h(
           'div',
           { className: 'dsh-devops-statusbar-inline' },
-          h('span', null, '拖拽节点调整顺序或换阶段；双击泳道标题可改名'),
+          h('span', null, '横向编排：阶段是列，节点在列内自上而下；拖拽可换列换序，双击列标题改名，列头或列间可插入新阶段'),
           h('div', { className: 'dsh-devops-spacer' }),
           selected
             ? h(
@@ -629,30 +943,89 @@ function PipelineEditor(props) {
               )
             : null,
         ),
+        // 0 节点：保存能成功、validate 也返回 ok（校验口径不看 job 数量），
+        // 但引擎在 prepareGraph 里会抛「流水线不可执行：没有任何 job」。
+        // 前端必须先把这条预判说清楚，避免用户到点「运行」那一刻才发现。
+        countJobs(pipeline) === 0
+          ? h(
+              Banner,
+              { tone: 'warn' },
+              '当前没有可运行的节点：保存与校验都会通过，但点「运行」会被拒绝（引擎报「流水线不可执行：没有任何 job」）。请先在左侧节点面板添加节点。',
+            )
+          : null,
         h(Canvas, {
           pipeline,
           onChange: props.onChange,
           selectedJob,
           onSelectJob: setSelectedJob,
+          toast: props.toast,
           registerAddNode: (fn) => {
             addNodeRef.current = fn;
           },
         }),
       ),
-      h(Inspector, {
-        job: selected,
-        node: selectedNode,
-        pipeline,
-        servers: props.servers,
-        ctx: props.ctx,
-        toast: props.toast,
-        onPatchJob: patchJob,
-        onPatchPipeline: patchPipeline,
-        onReload: props.onReload,
-        recent: props.recent,
-        remember: props.remember,
+      // 可拖拽的分隔条：向左拖宽检查器（右侧面板），双击在默认/最大化间切换。
+      // 注意：选中节点时**不占用这一栏** —— 编辑走覆盖画布的浮层（见下方 NodeEditSheet），
+      // 这一栏只在「没有选中节点」（流水线设置）时保留。
+      h('div', {
+        className: 'dsh-devops-inspector-resizer',
+        'data-role': 'inspector-resizer',
+        'data-open': !selected && inspectorOpen ? 'true' : 'false',
+        title: '拖拽调整宽度，双击在默认/最大化之间切换',
+        onMouseDown: startResize,
+        onDoubleClick: toggleWide,
       }),
+      !selected && inspectorOpen
+        ? h('div', { className: 'dsh-devops-inspector-host', style: { width: inspectorWidth + 'px' } },
+            h(Inspector, {
+              job: null,
+              node: null,
+              pipeline,
+              servers: props.servers,
+              ctx: props.ctx,
+              fieldCtx: props.fieldCtx,
+              toast: props.toast,
+              onPatchJob: patchJob,
+              onPatchPipeline: patchPipeline,
+              onReload: props.onReload,
+              recent: props.recent,
+              remember: props.remember,
+              onCollapse: () => setInspectorOpen(false),
+            }))
+        : null,
+      !selected && !inspectorOpen
+        ? h('div', { className: 'dsh-devops-inspector-rail' },
+            h(Button, {
+              size: 'sm',
+              variant: 'ghost',
+              icon: 'chevron',
+              className: 'dsh-devops-inspector-toggle',
+              'data-role': 'inspector-toggle',
+              title: '展开检查器',
+              onClick: () => setInspectorOpen(true),
+            }))
+        : null,
     ),
+    // 节点编辑浮层：覆盖在画布之上（不挤压布局），点外部/Esc 自动保存并收起。
+    // 只在选中节点时挂载 —— 收起后浮层与遮罩都不留在 DOM 里，
+    // 避免一个隐藏的遮罩常驻并拦截画布点击。
+    selected
+      ? h(NodeEditSheet, {
+          job: selected,
+          node: selectedNode,
+          pipeline,
+          servers: props.servers,
+          ctx: props.ctx,
+          fieldCtx: props.fieldCtx,
+          toast: props.toast,
+          onPatchJob: patchJob,
+          onPatchPipeline: patchPipeline,
+          onReload: props.onReload,
+          recent: props.recent,
+          remember: props.remember,
+          onClose: closeSheet,
+        })
+      : null,
     templateOpen ? h(TemplateModal, { pipeline, toast: props.toast, onClose: () => setTemplateOpen(false), onSaved: props.onTemplatesChanged }) : null,
     runOpen ? h(RunModal, { pipeline, toast: props.toast, onClose: () => setRunOpen(false), onStarted: props.onStarted }) : null,
   );

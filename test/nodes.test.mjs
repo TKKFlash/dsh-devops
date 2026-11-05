@@ -26,6 +26,7 @@ export const FIELD_TYPES = new Set([
   'multiselect',
   'ref:envset',
   'ref:snippet',
+  'ref:pipeline',
 ]);
 
 /** task-2 指定的 18 个节点 */

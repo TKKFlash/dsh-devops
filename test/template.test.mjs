@@ -154,7 +154,17 @@ describe('model/template', { skip }, () => {
       assert.equal(r.ok, true, `实际 ${JSON.stringify(r.errors)}`);
       assert.equal(r.value.name, 'RT-staging');
       const again = instantiate(tpl, { env: 'staging' });
-      assert.deepEqual(again.value, r.value, '同一输入必须得到同一结果（确定性）');
+      // createdAt/updatedAt 取自真实时钟，两次调用天然可能差 1ms——它不属于
+      // 「确定性」范畴。比对前剔除，否则本用例会跨毫秒边界随机变红（全量负载下必现）。
+      const stripTime = (value) => {
+        const copy = JSON.parse(JSON.stringify(value));
+        delete copy.createdAt;
+        delete copy.updatedAt;
+        return copy;
+      };
+      assert.deepEqual(stripTime(again.value), stripTime(r.value), '同一输入必须得到同一结果（确定性）');
+      // 同一次实例化内，createdAt 与 updatedAt 必须是同一时刻
+      assert.equal(r.value.createdAt, r.value.updatedAt, '创建时 createdAt 与 updatedAt 必须相同');
     });
   });
 });

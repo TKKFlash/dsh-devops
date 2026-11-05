@@ -15,7 +15,7 @@ export const descriptor = {
   icon: 'git-merge',
   description: '触发另一条流水线，可等待其完成并继承结果',
   fields: [
-    F.string('pipelineId', '子流水线 ID', { required: true, placeholder: 'build-deploy' }),
+    F.pipeline('pipelineId', '子流水线', { required: true, placeholder: 'build-deploy' }),
     F.boolean('wait', '等待完成', { default: true, description: '关闭时只触发，不阻塞当前流水线' }),
     F.number('timeoutMs', '等待超时', { min: 0, unit: 'ms', default: 0, description: '0 表示沿用子流水线自身超时' }),
     F.keyvalue('variables', '传入变量', { description: '覆盖子流水线的变量；同名优先于子流水线自身变量' }),

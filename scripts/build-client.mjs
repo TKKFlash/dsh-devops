@@ -41,6 +41,7 @@ const ORDER = [
   'sse.js',
   'state.js',
   'ui.js',
+  'syntax.js',
   'fields.js',
   'diagnostics.js',
   'logs.js',

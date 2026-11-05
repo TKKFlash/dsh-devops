@@ -73,9 +73,68 @@ function InlineStatus(props) {
   );
 }
 
+/**
+ * 视图状态的持久化键（sessionStorage）。
+ *
+ * 用户抱怨「每次离开 devops 界面再回来，之前的状态全部消失了，从概况重新开始」——
+ * 根因是面板随侧边栏 slot 卸载，组件内 useState 全部清零。这里把**视图位置**
+ * （当前页签、正在编辑/查看的流水线 id）存下来，重进时恢复；
+ * 只存轻量标记，不存数据本身，恢复后仍按 id 重新拉取最新数据。
+ */
+const VIEW_KEY = 'dsh-devops.view';
+
+/** 安全读取视图记忆（隐私模式 / 无 storage 时降级为 null）。 */
+function readViewState() {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(VIEW_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 安全写入视图记忆。 */
+function writeViewState(patch) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    const current = readViewState() || {};
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify(Object.assign({}, current, patch)));
+  } catch {
+    /* 存不了就算了，不影响功能 */
+  }
+}
+
+/** 读取「上次正在编辑的流水线与选中节点」，供页面恢复视图位置。 */
+function readEditMemory() {
+  const view = readViewState();
+  if (!view || typeof view !== 'object') return null;
+  return {
+    pipelineId: typeof view.editPipelineId === 'string' ? view.editPipelineId : '',
+    jobId: typeof view.editJobId === 'string' ? view.editJobId : '',
+  };
+}
+
+/** 记住「正在编辑的流水线与选中节点」（只存 id，数据仍按 id 现取）。 */
+function rememberEdit(pipelineId, jobId) {
+  writeViewState({
+    editPipelineId: pipelineId || '',
+    editJobId: jobId || '',
+  });
+}
+
 function App(props) {
   const ctx = props.ctx;
-  const [page, setPage] = useState(props.initialPage || 'overview');
+  const remembered = readViewState();
+  const [page, setPage] = useState(props.initialPage || (remembered && remembered.page) || 'overview');
+  /**
+   * 页面自己声明「本页内容自行滚动，外层不要滚」。
+   * styles.js 里 .dsh-devops-body[data-flush="true"] 早就定义了，但此前**无人设置**，
+   * 导致编辑页整页滚动、画布与节点面板无法各自滚动（用户抱怨的滚轮串区）。
+   */
+  const [bodyFlush, setBodyFlush] = useState(false);
   const [toastNode, toast] = useToast();
   const [initialAction, setInitialAction] = useState(props.initialAction || null);
   const [initialRunId, setInitialRunId] = useState(props.initialRunId || '');
@@ -83,6 +142,26 @@ function App(props) {
 
   const store = sharedStore;
   const state = useStore(store);
+
+  /**
+   * 字段控件的数据上下文：只放「服务器 / 环境变量组 / 脚本片段 / 默认服务器」。
+   *
+   * 不能把宿主 ctx 原样传下去 —— 宿主 ctx 是 Cordis context，读取未 inject
+   * 的服务属性会抛 `cannot get property "snippets" without inject`，
+   * 点开含引用字段的节点（如 shell.exec 的「引用脚本片段」）就会整块报错。
+   */
+  const fieldCtx = useMemo(
+    () => ({
+      servers: state.servers || [],
+      envsets: state.envsets || [],
+      snippets: state.snippets || [],
+      // 流水线候选：pipeline.call 节点的「子流水线」字段要能下拉选择 + 模糊匹配，
+      // 因此把列表一并下发（列表接口不含 stages，载荷很轻）。
+      pipelines: state.pipelines || [],
+      defaultServer: (state.settings && state.settings.defaultServer) || 'local',
+    }),
+    [state.servers, state.envsets, state.snippets, state.pipelines, state.settings],
+  );
 
   /** 全局刷新：并行拉取所有列表，任一失败不影响其它。 */
   const reload = useCallback(async () => {
@@ -151,6 +230,7 @@ function App(props) {
   const navigate = useCallback(
     (next, action) => {
       setPage(next);
+      writeViewState({ page: next });
       setInitialAction(action || null);
       setQuery('');
       if (action && action.runId) setInitialRunId(action.runId);
@@ -167,15 +247,29 @@ function App(props) {
     [],
   );
 
-  // 应用外壳把「跳转」能力交给状态栏（它在 shell.overlay 里，独立于本面板）
+  // 应用外壳把「跳转」能力交给状态栏（它在 shell.overlay 里，独立于本面板）。
+  // 同时把「导航已注册」写进共享 store：状态栏据此判断点击能否生效，
+  // 不能生效时给可见提示，而不是留一个点不动的死按钮。
   useEffect(() => {
-    if (props.registerNavigation) props.registerNavigation({ navigate, openRun });
-  }, [navigate, openRun]);
+    if (!props.registerNavigation) return;
+    props.registerNavigation({ navigate, openRun });
+    store.setState({ navRegistered: true });
+  }, [navigate, openRun, store]);
+
+  // 页面通过该回调声明是否需要「外层不滚动」（编辑器/运行详情这类内部有滚动区的页面）。
+  useEffect(() => {
+    writeViewState({ page });
+  }, [page]);
 
   const pageProps = {
     state,
     toast,
     ctx,
+    fieldCtx,
+    onBodyFlush: setBodyFlush,
+    remembered,
+    editMemory: readEditMemory(),
+    rememberEdit,
     onReload: reload,
     recent,
     remember,
@@ -184,7 +278,10 @@ function App(props) {
     initialAction,
     initialRunId,
     onTemplatesChanged: reload,
-    onOpenPipeline: (id) => navigate('pipelines', { edit: id }),
+    // 打开某条流水线：进详情（看定义/阶段/最近运行，并从详情进编辑）。
+    onOpenPipeline: (id) => navigate('pipelines', { detail: id }),
+    // 直接进某条流水线的编辑器（运行详情里的「编辑流水线」用）。
+    onEditPipeline: (id) => navigate('pipelines', { edit: id }),
     initialServerId: initialAction && initialAction.serverId,
   };
 
@@ -247,7 +344,7 @@ function App(props) {
       'div',
       { className: 'dsh-devops-main' },
       h(InlineStatus, { state }),
-      h('div', { className: 'dsh-devops-body' }, content),
+      h('div', { className: 'dsh-devops-body', 'data-flush': bodyFlush ? 'true' : undefined }, content),
     ),
     toastNode,
   );

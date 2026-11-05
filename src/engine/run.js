@@ -11,6 +11,9 @@
  * - 超时：job.timeoutMs → 中止步骤并强杀子进程
  * - 取消传播：AbortController → executor.run 的 signal → 子进程
  * - 事件：onEvent({type:'run'|'step'|'log'|'warning', ...}) 供 SSE 转发
+ * - 定义快照：运行创建时把流水线定义冻结进 run.pipelineSnapshot（可选字段，契约 §2.5）；
+ *   重试 / 从既有 run 复跑 / 继续调度一律以该快照为准，快照缺失的旧数据降级回当前定义。
+ *   因此**用户编辑流水线不会影响已运行或运行中的运行**。
  *
  * 生命周期约定：**承载活跃工作的定时器一律不得 unref**（审批等待、调度轮询、
  * 步骤超时、重试退避、wait 超时、wait.delay 等），否则宿主进程可能在运行结束前退出。
@@ -1043,7 +1046,7 @@ export function createEngine(deps = {}) {
 
   /* ------------------------------------------------------------ 运行创建 */
 
-  function buildRun({ pipeline, variables, trigger, parentRunId, parentStepId, callChain, runId }) {
+  function buildRun({ pipeline, variables, trigger, parentRunId, parentStepId, callChain, runId, pipelineSnapshot }) {
     const steps = {};
     for (const stage of pipeline.stages ?? []) {
       for (const job of stage.jobs ?? []) {
@@ -1058,6 +1061,9 @@ export function createEngine(deps = {}) {
       id: runId,
       pipelineId: String(pipeline.id),
       pipelineName: String(pipeline.name ?? pipeline.id),
+      // 契约 §2.5 的 run 形状扩展（**可选字段**）：冻结本次运行使用的定义。
+      // 运行创建后用户再编辑 store 里的流水线，不会影响这次运行及其重试/复跑。
+      pipelineSnapshot: pipelineSnapshot ?? snapshotPipeline(pipeline),
       status: 'queued',
       trigger: trigger ?? 'manual',
       startedAt: 0,
@@ -1074,6 +1080,71 @@ export function createEngine(deps = {}) {
     const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
     const rand = Math.random().toString(36).slice(2, 8);
     return `run-${stamp}-${rand}`;
+  }
+
+  /* ------------------------------------------------------------ 定义快照 */
+
+  /**
+   * 冻结一份流水线定义作为运行快照（**只存定义，不存运行时状态**）。
+   * 结构化深拷贝后 Object.freeze，防止运行期被别处（store 热更新、编辑器）改写。
+   * 纯数据深拷贝；对循环引用用 seen 去重，不会无限递归。
+   */
+  function snapshotPipeline(pipeline) {
+    if (!pipeline || typeof pipeline !== 'object') return null;
+    try {
+      return deepFreeze(structuredClone(pipeline));
+    } catch {
+      // structuredClone 不可用或含不可克隆值（如函数）：退化为浅拷贝，仍保证不共享引用
+      try {
+        return deepFreeze(JSON.parse(JSON.stringify(pipeline)));
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  function deepFreeze(value, seen = new Set()) {
+    if (!value || typeof value !== 'object' || seen.has(value)) return value;
+    seen.add(value);
+    for (const key of Object.keys(value)) deepFreeze(value[key], seen);
+    return Object.freeze(value);
+  }
+
+  /** 广播一次「快照缺失，降级用当前定义」的警告（每个 run 只报一次） */
+  const degradedRuns = new Set();
+  function warnSnapshotMissing(runId, reason) {
+    if (degradedRuns.has(runId)) return;
+    degradedRuns.add(runId);
+    emit(onEvent, {
+      type: 'warning',
+      runId,
+      message: `运行 ${runId} 没有定义快照（${reason}），已降级使用当前流水线定义`,
+    });
+  }
+
+  /**
+   * 解析一次运行应当使用的流水线定义：**快照优先，旧数据降级回当前定义**。
+   * 这是「编辑流水线不影响已运行/运行中的运行」的唯一入口——
+   * 任何需要按定义调度的路径都必须经过它，不得直接 store.pipelines.get()。
+   *
+   * @param {object} run 运行记录（可能来自磁盘的旧数据）
+   * @returns {object} 流水线定义
+   */
+  function resolveRunPipeline(run) {
+    const runId = String(run?.id ?? '');
+    const snapshot = run?.pipelineSnapshot;
+    if (snapshot && typeof snapshot === 'object' && (snapshot.stages || snapshot.id)) {
+      return snapshot;
+    }
+    // 降级（向后兼容）：旧 run 记录没有快照，回退到当前定义。
+    // 这是「老数据也能重试」的唯一保障，绝不能因为缺快照而抛错。
+    const current = store?.pipelines?.get?.(String(run.pipelineId));
+    warnSnapshotMissing(runId || '(未知)', current ? '历史运行未保存快照' : '历史运行未保存快照且流水线已不存在');
+    if (!current) {
+      // 与改造前完全一致的行为：流水线被删且无快照时给出可读错误
+      throw new Error(`流水线不存在：${run.pipelineId}`);
+    }
+    return current;
   }
 
   /** 调度前的统一校验（非法流水线必须给出可读、可修的错误） */
@@ -1174,13 +1245,13 @@ export function createEngine(deps = {}) {
       const existing = store?.runs?.get?.(input);
       if (!existing) throw new Error(`运行不存在：${input}`);
       run = existing;
-      pipeline = store?.pipelines?.get?.(String(run.pipelineId));
-      if (!pipeline) throw new Error(`流水线不存在：${run.pipelineId}`);
+      // 复用既有运行：以该运行的定义快照为准，编辑流水线不得改变它的行为
+      pipeline = resolveRunPipeline(run);
     } else if (input && typeof input === 'object') {
       pipeline = input.pipeline;
       if (!pipeline && input.runId) {
         run = store?.runs?.get?.(input.runId);
-        pipeline = store?.pipelines?.get?.(String(run?.pipelineId));
+        if (run) pipeline = resolveRunPipeline(run);
       }
       if (!pipeline) throw new Error('start 需要 pipeline 或可用的 runId');
     } else {
@@ -1191,11 +1262,20 @@ export function createEngine(deps = {}) {
       throw new Error(`运行已在进行中：${run.id}`);
     }
 
+    // 新运行：先把提交时的定义冻结成快照，**并用这份冻结副本去建图与执行**。
+    // 这样调用方在 start 之后改写自己手里的对象、或去编辑 store，都影响不到本次运行。
+    let freshSnapshot = null;
+    if (!run) {
+      freshSnapshot = snapshotPipeline(pipeline);
+      if (freshSnapshot) pipeline = freshSnapshot;
+    }
+
     const graph = prepareGraph(pipeline);
 
     if (!run) {
       run = buildRun({
         pipeline,
+        pipelineSnapshot: freshSnapshot,
         variables: input?.variables,
         trigger: input?.trigger,
         parentRunId: input?.parentRunId,
@@ -1341,8 +1421,8 @@ export function createEngine(deps = {}) {
   function retry(runId, options = {}) {
     const previous = store?.runs?.get?.(String(runId));
     if (!previous) throw new Error(`运行不存在：${runId}`);
-    const pipeline = store?.pipelines?.get?.(String(previous.pipelineId));
-    if (!pipeline) throw new Error(`流水线不存在：${previous.pipelineId}`);
+    // 从既有运行复跑：沿用它的定义快照（旧数据降级回当前定义）
+    const pipeline = resolveRunPipeline(previous);
 
     if (options.inPlace === true) return retryInPlace(previous, pipeline, options);
 
@@ -1450,8 +1530,8 @@ export function createEngine(deps = {}) {
   function retryStep(runId, stepId) {
     const run = store?.runs?.get?.(String(runId));
     if (!run) throw new Error(`运行不存在：${runId}`);
-    const pipeline = store?.pipelines?.get?.(String(run.pipelineId));
-    if (!pipeline) throw new Error(`流水线不存在：${run.pipelineId}`);
+    // 重试步骤：以该运行的定义快照为准（旧数据降级回当前定义）
+    const pipeline = resolveRunPipeline(run);
     const target = String(stepId);
     if (!run.steps?.[target]) throw new Error(`步骤不存在：${stepId}`);
     if (contexts.has(run.id)) throw new Error(`运行正在进行中，无法单独重跑步骤：${runId}`);

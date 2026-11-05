@@ -258,6 +258,9 @@ export function instantiate(template, params = {}) {
   }
 
   // 实例化产物必须是一条合法流水线：补 id/name 后规范化
+  // 时间戳只取一次：否则同一份实例的 createdAt 与 updatedAt 可能差 1ms，
+  // 既违反「创建时二者应相同」的语义，也会让确定性用例跨毫秒边界随机变红。
+  const now = Date.now();
   const pipeline = normalizePipeline({
     ...body,
     id: body?.id ?? newId('pipeline'),
@@ -265,8 +268,8 @@ export function instantiate(template, params = {}) {
     description: body?.description ?? template.description ?? '',
     category: body?.category ?? template.category ?? '',
     tags: Array.isArray(body?.tags) ? body.tags : Array.isArray(template.tags) ? template.tags : [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
   });
 
   return { ok: true, value: pipeline };

@@ -111,13 +111,19 @@
 
 | 值 | 含义 | 必需字段 |
 |---|---|---|
-| `key` | 私钥认证 | `keyRef` → `ctx.credentials` 引用 |
+| `key` | 私钥认证 | `keyRef` → `ctx.credentials` 引用；或 `keyPath` 指向**本机私钥文件** |
 | `password` | 密码认证 | `passwordRef` → `ctx.credentials` 引用 |
 | `agent` | SSH agent 认证（云服务器常用） | 无（读 `SSH_AUTH_SOCK`；Windows 为 `\\.\pipe\openssh-ssh-agent`） |
 | `none` | 不认证 | 无 |
 
 **约束**：`none` 仅对 `kind:'local'` 合法；`kind:'ssh'` 使用 `none` 必须校验失败（禁止"静默无认证连接"）。
 `key`/`password` 的值一律只存 **credentials 引用名**，绝不存明文，也绝不落日志。
+
+**私钥来源优先级（`type:'key'`）**：显式 `auth.keyPath`（本机文件路径）→ `auth.keyRef` 凭据引用 →
+`auth.keyRef` 若本身是一个存在的本机文件路径则读取该文件 → 插件 `config.privateKey`。
+读取本机私钥文件时：路径必须是**常规文件**且大小受限（>1MB 视为异常并拒绝），
+失败给出含路径与原因的可读错误，**错误信息与日志都不得包含私钥内容**；
+读到的私钥内容必须进入 `secrets`（供写盘前打码）。
 
 内置 `local` 服务器：`{id:"local",name:"本机",kind:"local",host:"127.0.0.1",auth:{type:"none"}}`，不可删除，不可改 `kind`。
 
@@ -144,6 +150,9 @@
   "status":"queued|running|success|failed|canceled",
   "trigger":"manual|api|ai","startedAt":0,"finishedAt":0,
   "variables":{ "ENV":"prod" },
+  // **可选字段**：本次运行使用的流水线定义快照（创建运行时冻结）。
+  // 只存定义、不存运行时状态；SSE 摘要（summarizeRun）**刻意不含**它，避免每次事件推送整份定义。
+  "pipelineSnapshot": { /* 与 Pipeline 同构，深冻结 */ },
   "steps": {
     "compile": { "id":"compile","name":"编译","stage":"build","node":"shell.exec",
       "server":"local","status":"pending|running|success|failed|skipped|canceled",
@@ -155,6 +164,15 @@
   "parentRunId":null, "parentStepId":null }
 ```
 `steps` 用**对象（id → step）**而非数组，便于按 id 增量更新与 SSE 推送。
+
+**定义快照语义（重要）**：运行创建时把流水线定义冻结进 `run.pipelineSnapshot`，
+此后**用户编辑流水线不影响已运行或运行中的运行**：
+
+- 任何按定义调度的路径（`start(runId)`、`retry(runId, ...)`、`retryStep(runId, stepId)`）
+  都必须经 `resolveRunPipeline(run)` 取定义，**不得**直接 `store.pipelines.get()`。
+- 新运行（`start({ pipeline })`）执行的是**提交时的冻结副本**，调用方随后修改该对象或 store 都不影响本次运行。
+- 向后兼容：无 `pipelineSnapshot` 的旧 run 记录降级回当前定义并发出 warning；无快照且定义已删时保持可读错误 `流水线不存在：<id>`。
+- 子流水线（`startSubRun`）是按 id **新起一次运行**，取当前定义属正确语义，不走快照。
 
 ## 3. 模块接口（import 契约）
 
@@ -475,6 +493,11 @@ ctx.slots.inject('shell.overlay',     () => ctx.slots.register({ name:'shell.ove
 
 ## 4. 字段类型 → 控件映射（前端渲染依据）
 
+**字段控件的数据上下文**：`FieldControl` 的 `ctx` 必须是 App 用 state 构造的纯数据包
+`{ servers, envsets, snippets, defaultServer }`（字段名 `fieldCtx`，由 `App` 统一构造后经页面下发）。
+**不得把宿主 Cordis context 直接传入**：读取未 inject 的服务属性会抛
+`cannot get property "xxx" without inject`，表现为点开节点检查器即整块报错。
+
 | `type` | 控件 | 额外键 |
 |---|---|---|
 | `string` | 单行输入 | `placeholder`,`maxLength` |
@@ -492,6 +515,7 @@ ctx.slots.inject('shell.overlay',     () => ctx.slots.register({ name:'shell.ove
 | `multiselect` | 标签多选 | `options` |
 | `ref:envset` | 环境变量组引用 | — |
 | `ref:snippet` | 脚本片段引用 | — |
+| `ref:pipeline` | 流水线引用（可搜索下拉，按 name/id 模糊匹配；允许手填未知 id） | — |
 
 ## 5. 安全约定（强制）
 

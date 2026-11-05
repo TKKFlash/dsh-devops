@@ -30,6 +30,9 @@ export const FIELD_TYPES = Object.freeze([
   'multiselect',
   'ref:envset',
   'ref:snippet',
+  // 模板参数与节点字段共用同一套字段类型；pipeline.call 的 ref:pipeline
+  // 必须在两份白名单里都存在，否则模板里用它会报「未知参数类型」。
+  'ref:pipeline',
 ]);
 
 const SCHEDULING_WHEN = Object.freeze(['on_success', 'always', 'manual']);

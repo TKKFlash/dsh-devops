@@ -71,6 +71,7 @@ export const FIELD_TYPES = Object.freeze([
   'multiselect',
   'ref:envset',
   'ref:snippet',
+  'ref:pipeline',
 ]);
 
 /** code 类型允许的语言 */

@@ -43,6 +43,9 @@ export const F = {
   multiselect: (name, label, options, extra = {}) => f(name, label, 'multiselect', { options: [...options], ...extra }),
   envset: (name, label, extra = {}) => f(name, label, 'ref:envset', extra),
   snippet: (name, label, extra = {}) => f(name, label, 'ref:snippet', extra),
+  // ref:pipeline：引用另一条流水线。前端渲染为「可搜索下拉 + 可手填 id」，
+  // 候选来自 App 下发的 fieldCtx.pipelines；仍允许填尚未创建的 id。
+  pipeline: (name, label, extra = {}) => f(name, label, 'ref:pipeline', extra),
 };
 
 /* ------------------------------------------------------------------ 头指令 */
