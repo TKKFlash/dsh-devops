@@ -114,7 +114,41 @@ export async function readPrivateKeyFile(target) {
   if (content.trim() === '') {
     throw new SshError(`私钥文件内容为空：${file}。`, 'private-key-file-empty', { path: file });
   }
+
+  // 识别「把公钥当私钥」：这是实际踩过的坑——用户看到 .ssh 目录里两个同名文件，
+  // 很容易选中带 .pub 的那个。公钥喂给 ssh2 只会在连接阶段报一句难懂的认证失败，
+  // 因此在这里就点明，并给出该选的路径。
+  if (looksLikePublicKey(content, file)) {
+    const suggestion = file.replace(/\.pub$/i, '');
+    throw new SshError(
+      `所选文件是**公钥**而不是私钥：${file}。` +
+        `请选择与之配对的私钥文件（通常是去掉 .pub 后缀的 ${suggestion}）。` +
+        '公钥要添加到服务器的 ~/.ssh/authorized_keys；本机需要的是私钥。',
+      'private-key-file-is-public',
+      { path: file, suggestion },
+    );
+  }
+
   return content;
+}
+
+/**
+ * 判断内容是否「其实是公钥」。
+ *
+ * 依据（任一命中即可判定）：
+ * - 文件名以 .pub 结尾（OpenSSH 的约定）；
+ * - 内容以 `ssh-<算法> ` 开头（authorized_keys 单行格式）；
+ * - 内容是单行的 `<algo> <base64>`，且不含任何 PEM 头尾。
+ * 真正的私钥是 PEM（`-----BEGIN ... PRIVATE KEY-----`）或是 ssh2 支持的其它密钥容器，
+ * 都不会满足上述形态。
+ */
+function looksLikePublicKey(content, file) {
+  if (/\.pub$/i.test(String(file || ''))) return true;
+  const text = String(content || '').trim();
+  if (/^ssh-(rsa|dss|ed25519|ed448)\s+[A-Za-z0-9+/=]+/.test(text)) return true;
+  if (/^ecdsa-sha2-[A-Za-z0-9-]+\s+[A-Za-z0-9+/=]+/.test(text)) return true;
+  if (/^sk-(ssh-ed25519|ecdsa-sha2-[A-Za-z0-9-]+)\s+[A-Za-z0-9+/=]+/.test(text)) return true;
+  return false;
 }
 
 /**
