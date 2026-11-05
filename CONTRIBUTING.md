@@ -50,6 +50,16 @@ provision（多发行版探测解析、方案优先级、默认不安装）、
 HTTP/SSE（状态码、body 超限、非 loopback 拒绝、续传与 gap）、
 前端（语法着色引擎、日志终端渲染、代码编辑器、横向画布、编辑浮层、滚动分区、视图持久化、流水线引用模糊匹配）。
 
+## 发版纪律
+
+- **版本只有一个来源：`package.json`。** 不要在代码里另写版本常量——`index.js` 的插件版本就是从
+  `package.json` 读的，`/api/meta` 返回的也是它。历史上曾因硬编码 `VERSION = '0.1.0'` 而
+  `package.json` 已是 0.2.0，导致插件自报旧版本、下载用户看到「版本信息错乱」。
+- 发版时同步三处：`package.json` 版本号、`CHANGELOG.md`（新增版本标题 + 正确的对比链接）、
+  git tag。`test/version.test.mjs` 会校验它们一致，不一致直接红。
+- `package.json` 的 `files` 白名单需包含 `package.json` 自身（版本读取依赖它）。
+- 后端改动（executor / 引擎 / handler）需重启宿主才生效；前端改动需重建 `client.js`。
+
 ## 目录结构
 
 ```

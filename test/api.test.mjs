@@ -6,7 +6,8 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { suiteFor, requiredFn } from './helpers/modules.mjs';
+import { readFileSync } from 'node:fs';
+import { suiteFor, requiredFn, pluginPath } from './helpers/modules.mjs';
 import { makeTmpDir, cleanupTmp, fakeLog } from './helpers/tmp.mjs';
 import { samplePipeline, sampleServer } from './helpers/fixtures.mjs';
 
@@ -131,7 +132,8 @@ describe('api/router', { skip: routerSuite.skip }, () => {
       nodes,
       log: fakeLog(),
       config: {},
-      version: '0.1.0',
+      // 用真实 package.json 的版本，避免测试自己成为"版本错乱"的第二个来源
+      version: JSON.parse(readFileSync(pluginPath('package.json'), 'utf8')).version,
       engine: {
         start: async () => ({ runId: 'run-1', run: {}, wait: async () => ({}), cancel: async () => {}, promise: Promise.resolve({}) }),
         cancel: async () => {},

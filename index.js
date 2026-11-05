@@ -15,6 +15,7 @@
  */
 
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { PLUGIN_NAME, CONFIG_FIELDS, resolveConfig, configToSettings, resolveDshHome } from './src/config.js'
@@ -39,8 +40,31 @@ export const name = PLUGIN_NAME
  */
 export const inject = ['webServer']
 
-/** 插件版本（与 package.json 保持一致，用于 /api/meta）。 */
-const VERSION = '0.1.0'
+/**
+ * 插件版本：**从 package.json 读取**，不再手工维护常量。
+ *
+ * 此前这里硬编码 '0.1.0'，与 package.json 的 0.2.0 不同步，
+ * 导致 /api/meta 对外自报旧版本——用户下载后看到「版本错乱」。
+ * 单一事实源 = package.json；此处只做读取，不做第二份定义。
+ */
+function readPluginVersion() {
+  // 首选 package.json：它是版本的单一事实源
+  try {
+    const pkgPath = fileURLToPath(new URL('./package.json', import.meta.url))
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+    if (typeof pkg.version === 'string' && pkg.version.trim() !== '') return pkg.version.trim()
+  } catch {
+    /* 落到下面的回退 */
+  }
+  // 回退：某些打包/注入场景下 package.json 可能不在包内，
+  // npm 会注入 npm_package_version，用它仍能得到正确版本
+  const fromEnv = process.env.npm_package_version
+  if (typeof fromEnv === 'string' && fromEnv.trim() !== '') return fromEnv.trim()
+  // 最后兜底：占位版本（宁可显示 0.0.0，也不要让插件起不来）
+  return '0.0.0'
+}
+
+const VERSION = readPluginVersion()
 
 /** 插件根目录（skills/ 与 client.js 所在处）。 */
 export function pluginDir() {

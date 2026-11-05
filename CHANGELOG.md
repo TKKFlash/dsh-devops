@@ -41,6 +41,11 @@
 - 修复 `template.instantiate` 连续两次 `Date.now()` 导致同一次实例化 `createdAt` 与 `updatedAt` 可能差 1ms，进而让「确定性」用例跨毫秒随机变红（实测竞态率约 0.44%）。
 - 修复测试定时器泄漏：`RunDetail` 的每秒 `setInterval` 在桩环境下无人清理，导致 `node --test` 进程挂死。
 - 修复 `ssh2` 缺失时错误信息被上一层掩盖，用户看不到真实原因。
+- 修复**插件对外自报版本错乱**：`index.js` 硬编码 `VERSION = '0.1.0'`，而 package.json 已是 0.2.0，
+  `/api/meta` 返回旧版本，导致下载用户看到版本对不上。现改为从 package.json 读取（单一事实源），
+  并加版本一致性回归测试锁死。
+- 修复 SSH 私钥路径选了公钥（`.pub`）时只在连接阶段报模糊失败的问题：现直接识别并提示
+  「所选文件是公钥，请选去掉 .pub 的私钥」（错误码 `private-key-file-is-public`）。
 
 ### 变更
 
@@ -142,5 +147,6 @@
 - 纯 ESM、零构建、除可选 `ssh2` 外零运行时依赖（glob 与文件锁为自研零依赖实现）。
 - 测试：`node --test`，覆盖模型校验、变量合并、glob、模板、存储原子性、日志偏移与打码、DAG、本地执行器、供给策略、节点注册表、导出导入、HTTP 与 SSE。
 
-[Unreleased]: https://github.com/TKKFlash/dsh-devops/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/TKKFlash/dsh-devops/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/TKKFlash/dsh-devops/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/TKKFlash/dsh-devops/releases/tag/v0.1.0

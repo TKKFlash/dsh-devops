@@ -17,6 +17,7 @@
   },
   "files": [
     "index.js",
+    "package.json",
     "client.js",
     "src",
     "skills",
