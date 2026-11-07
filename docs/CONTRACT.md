@@ -285,6 +285,7 @@ registry.list()                   // → [{id,kind,serverId}]
 {
   id: 'local' | 'ssh:<serverId>',
   kind: 'local' | 'ssh',
+  supportsScript?: true          // 可选能力标志：声明「我能接住 spec.script / spec.scriptArgv」
   async probe(server)            // → { os, arch, shell, workdir, runtime:{}, managers:[], sudo, error }
   async run(spec)                // → handle
   async readDir(server, path)    // → [{name,isDir,size,mtime}]  越界抛错
@@ -295,10 +296,22 @@ registry.list()                   // → [{id,kind,serverId}]
   async transferOut(server, remotePath, localPath)
   async dispose()
 }
-// spec: { argv, cwd, env, timeoutMs, signal, label, onData(chunk:{text,stream}) }
+// spec: { argv, script, shell, scriptArgv, cwd, env, timeoutMs, signal, label, onData(chunk:{text,stream}) }
 // handle: { done: Promise<{exitCode,signal}>, cancel(), phase }   // phase 可读写，见 §3.8
 ```
 实现要求：**绝不拼 shell 字符串传递用户输入**（除显式 `script` 本身，那是用户脚本内容）；`env` 中的 `undefined` 值表示删除。
+
+**脚本文本通道（`argv` 与 `script` 二选一）**
+
+节点在**控制端**落地临时文件再把该路径当 `argv` 传下去，跨机时目标机上并不存在那个文件 —— 这是曾经的阻断级缺陷。因此：
+
+- 执行器可声明 `supportsScript: true`，表示它能接收脚本文本并交给**目标端**解释器。
+- 运行时（`run.js` 的 `spawn`）**仅对声明该能力的执行器**传递 `script` / `shell` / `scriptArgv`；其余执行器只收 `argv`，行为不变。
+- `script`：脚本文本。未指定 `shell` 时由远端 POSIX shell 承载（`sh -c '<script>'`）——**不得**把脚本裸拼进命令行，否则有 `env` 前缀时首行会被 `env` 当成命令名。
+- `scriptArgv`：解释器 argv，脚本文本作为**最后一个独立参数**追加（`['python3','-c']` + script → `'python3' '-c' '<script>'`）；与 `script` 同时存在时优先于 `shell`。
+- 指定 `shell` 时按解释器家族包裹：`sh/bash/zsh/…`→`-c`；`cmd`→`/d /s /c`；PowerShell→`-Command`（附 `exit $LASTEXITCODE` 传播退出码）。
+- 脚本文本走命令行时受 OpenSSH `MaxCommandLength`（约 256KB）约束，实现须在发送前拦截并给出可读错误（`REMOTE_COMMAND_TOO_LARGE` / `SCRIPT_CONTAINS_NUL`），不可让 sshd 断连了事。
+- `local` 执行器**故意不声明**该能力：其 Windows 编码（.ps1 的 BOM）与退出码传播逻辑已在 `helpers.buildScriptInvocation` 中验证，改由执行器重实现会丢退出码（实测打破「快照 a」用例）。
 
 #### 3.7.1 glob 匹配口径（已裁决，engine 与 remote 必须一致）
 

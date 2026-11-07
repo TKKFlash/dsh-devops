@@ -138,6 +138,9 @@ export function createSshExecutor(options = {}) {
     id: `ssh:${serverId}`,
     kind: 'ssh',
     serverId,
+    // 声明「我能接住 spec.script / spec.scriptArgv」：脚本文本整体交给远端 shell，
+    // 不需要控制端临时文件。运行时据此决定是否走 script 通道（见 run.js 的 spawn）。
+    supportsScript: true,
     /** transport 厂（测试可直接替换/检查连接池） */
     transportFactory: factory,
 
@@ -188,6 +191,7 @@ export function createSshExecutor(options = {}) {
       const command = buildCommandLine({
         argv: spec.argv,
         script: spec.script,
+        scriptArgv: spec.scriptArgv,
         cwd: spec.cwd || server.workdir || '',
         env: spec.env,
         sudo: spec.sudo ?? spec.elevated,
@@ -196,6 +200,30 @@ export function createSshExecutor(options = {}) {
       });
 
       const label = spec.label || 'ssh.run';
+
+      // 脚本文本走命令行（spec.script / spec.scriptArgv）时，长度受 OpenSSH 的 exec 请求上限约束。
+      // 超限时 sshd 会**直接断连**，客户端只看到「exec request failed on channel 0」，
+      // 用户完全看不出是脚本太长 —— 必须在发送前明确报错（交接文档 §8 方案 B 的已知风险）。
+      // OpenSSH 的 MaxCommandLength 默认约 256KB；取 200KB 留出 env 前缀与转义膨胀的余量。
+      const MAX_COMMAND_BYTES = 200 * 1024;
+      const commandBytes = Buffer.byteLength(command, 'utf8');
+      if (commandBytes > MAX_COMMAND_BYTES) {
+        const error = new Error(
+          `发往远端的命令行过大（${commandBytes} 字节，上限 ${MAX_COMMAND_BYTES}）。`
+          + '脚本走命令行传输时受 SSH 限制：再大 sshd 会直接断连且不说明原因。'
+          + '请把脚本改为从目标机上的文件执行（例如先经「文件写入」节点落盘，再在此处执行该文件）。',
+        );
+        error.code = 'REMOTE_COMMAND_TOO_LARGE';
+        error.suggestion = '改用「文件写入」节点把脚本写到目标机，再用 shell.exec 执行该文件路径。';
+        throw error;
+      }
+      // NUL 字节在 SSH 通道里会被截断/拒绝，且远端 shell 无法执行含 NUL 的脚本。
+      if (command.includes('\u0000')) {
+        const error = new Error('脚本含 NUL 字节，无法通过 SSH 通道发送。请从脚本中移除空字节。');
+        error.code = 'SCRIPT_CONTAINS_NUL';
+        throw error;
+      }
+
       state.phase = 'running';
       emitLog(log, 'debug', `[${label}] ${executor.id} $ ${truncate(command, 500)}`);
 

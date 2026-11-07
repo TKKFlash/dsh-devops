@@ -19,12 +19,12 @@ export const descriptor = {
     F.code('script', '脚本', 'shell', {
       required: true,
       placeholder: 'npm ci && npm run build',
-      description: '脚本文本会写入临时文件后交给解释器执行，不拼接进命令行',
+      description: '绑定 SSH 服务器时，脚本文本整体交给远端解释器执行（不落控制端文件）；绑本机时写入本机临时文件执行',
     }),
     F.enum('shell', '解释器', ['auto', 'sh', 'bash', 'powershell', 'cmd'], {
       default: 'auto',
       optionsFrom: 'shell',
-      description: 'auto 按目标系统选择：Windows→PowerShell/cmd，Linux/macOS→bash',
+      description: 'auto 按执行端平台选择：Windows 控制端→PowerShell/cmd，Linux/macOS→bash。绑定 SSH 时脚本交给远端 shell，故通常留 auto',
     }),
     F.snippet('snippetRef', '引用脚本片段', { description: '从资源库选择一段脚本并拼接到脚本开头' }),
     F.dir('workdir', '工作目录', { serverField: 'server', description: '留空则使用服务器默认 workdir' }),
@@ -58,16 +58,30 @@ export const descriptor = {
       }
     }
 
-    const invocation = await buildScriptInvocation({
-      script,
-      shell: inputs.shell && inputs.shell !== 'auto' ? inputs.shell : '',
-      workdir: rt.cwd,
-    });
+    const requestedShell = inputs.shell && inputs.shell !== 'auto' ? inputs.shell : '';
+
+    // 目标是 SSH 时走脚本文本通道：脚本整体交给**远端**解释器。
+    // 绝不能沿用控制端的 mkdtemp 临时文件 —— 那个文件在目标机上并不存在（老缺陷的根因 1）。
+    const usesScriptChannel = rt.executor?.supportsScript === true;
+    let invocation = null;
+    if (!usesScriptChannel) {
+      // 本机路径：保持既有行为（helpers 里那套 Windows 编码与退出码传播逻辑已验证）。
+      try {
+        invocation = await buildScriptInvocation({ script, shell: requestedShell, workdir: rt.cwd });
+      } catch (error) {
+        return {
+          exitCode: 1,
+          error: String(error?.message ?? error),
+          outputs: { suggestion: error?.suggestion ?? '' },
+        };
+      }
+    }
 
     try {
       const env = { ...(rt.env ?? {}), ...toRecord(inputs.env) };
       const result = await spawnCollect(rt, {
-        argv: invocation.argv,
+        argv: invocation ? invocation.argv : undefined,
+        ...(usesScriptChannel ? { script, shell: requestedShell } : {}),
         cwd: inputs.workdir ? resolveWorkPath(rt.cwd, inputs.workdir) : rt.cwd,
         env,
         timeoutMs: Number(inputs.timeoutMs) > 0 ? Number(inputs.timeoutMs) : undefined,
@@ -79,11 +93,12 @@ export const descriptor = {
         outputs: {
           stdout: (result.stdout ?? '').slice(0, MAX_CAPTURE),
           stderr: (result.stderr ?? '').slice(0, MAX_CAPTURE),
-          command: invocation.argv.join(' '),
+          // 本地回显实际 argv；远端回显解释器/脚本形态的说明（含真实命令行见步骤日志）
+          command: invocation ? invocation.argv.join(' ') : (requestedShell ? `${requestedShell} -c <script>` : '<script>'),
         },
       });
     } finally {
-      await invocation.cleanup();
+      if (invocation) await invocation.cleanup();
     }
   },
 };

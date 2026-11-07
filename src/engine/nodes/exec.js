@@ -41,12 +41,16 @@ export function parseSuccessCodes(spec) {
  *                    stdout:string, stderr:string, durationMs:number}>}
  */
 export async function spawnCollect(rt, options = {}) {
-  const { argv, cwd, env, timeoutMs, label } = options;
+  const { argv, script, shell, scriptArgv, cwd, env, timeoutMs, label } = options;
   const stdoutChunks = [];
   const stderrChunks = [];
 
   // rt.spawn 统一入口（本地与 ssh 都由执行器实现）；日志透传由 rt.spawn 负责
   const handle = await rt.spawn(argv, {
+    // 脚本文本（与 argv 二选一）：是否真正启用由 rt.spawn 按执行器能力决定。
+    script,
+    shell,
+    scriptArgv,
     cwd: cwd ?? rt.cwd,
     env: env ?? rt.env,
     timeoutMs,
@@ -137,8 +141,15 @@ export function toNodeResult(result, options = {}) {
 export async function resolveInterpreter(rt, request) {
   const kind = request.kind;
   const version = String(request.version ?? '').trim();
+  // 解释器名最终是在**目标端**的 PATH 上解析的，因此候选顺序必须按目标平台挑，
+  // 不能按控制端的 process.platform：Windows 控制端 + Ubuntu 目标会挑到 'python'，
+  // 而 Ubuntu 上通常只有 python3（真机实测：'bash: line 1: python: command not found'，exit 127）。
+  // 远端（supportsScript，即 SSH）走 POSIX 顺序；本地保持既有行为不变。
+  const remote = rt?.executor?.supportsScript === true;
   const fallbacks = kind === 'python'
-    ? (process.platform === 'win32' ? ['python', 'python3', 'py'] : ['python3', 'python'])
+    ? (remote
+      ? ['python3', 'python']
+      : (process.platform === 'win32' ? ['python', 'python3', 'py'] : ['python3', 'python']))
     : ['node'];
 
   // 未指定版本：直接用 PATH 上的解释器

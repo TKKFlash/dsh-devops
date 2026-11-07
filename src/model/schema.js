@@ -513,6 +513,9 @@ export function normalizePipeline(pipeline) {
       return {
         id: isNonEmptyString(job.id) ? job.id : `job-${si}-${ji}`,
         name: typeof job.name === 'string' ? job.name : '',
+        // 作业级工作目录：原先不在白名单里被**静默丢弃**，而 run.js 又把它当最高优先级来源，
+        // 于是字段「看起来存在、实际无效」。补进白名单让它真正生效（相对路径由节点解析）。
+        workdir: isNonEmptyString(job.workdir) ? job.workdir : '',
         node: typeof job.node === 'string' ? job.node : '',
         // 契约 §2.1：server 缺省用 defaults.server（而不是 null，否则执行器拿不到目标机）
         server: isNonEmptyString(job.server) ? job.server : (source.defaults?.server ?? null) || 'local',

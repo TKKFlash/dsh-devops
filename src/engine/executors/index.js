@@ -142,6 +142,9 @@ export function createExecutorRegistry(options = {}) {
       __lazy: true,
       id: `ssh:${serverId}`,
       kind: 'ssh',
+      // 能力标志必须在代理上就能读到：run.js 在调用 run() **之前**就要据此决定
+      // 是否传 script（惰性代理此时还没创建真实执行器，读不到它的字段）。
+      supportsScript: true,
       server,
       probe: (s) => call('probe', [s ?? server]),
       run: (spec) => call('run', [spec]),

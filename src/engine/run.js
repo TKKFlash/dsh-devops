@@ -397,6 +397,11 @@ export function createEngine(deps = {}) {
     } else if (server?.workdir) {
       cwd = String(server.workdir);
       cwdSource = 'server.workdir';
+    } else if (server?.probe?.workdir) {
+      // 探测已经拿到了目标机真实目录（如 /root）：比回落控制端 process.cwd() 正确得多。
+      // 跨机时控制端 cwd 是 Windows 盘符路径，远端根本不存在。
+      cwd = String(server.probe.workdir);
+      cwdSource = 'server.probe.workdir';
     } else {
       cwd = process.cwd();
       cwdSource = '引擎进程工作目录';
@@ -444,8 +449,16 @@ export function createEngine(deps = {}) {
         // 优先用调用方显式传入的 timeoutMs（含 0 = 不超时）；否则回退到 job 超时。
         // 步骤级超时已由 engine 的计时器统一管理。
         const requested = options.timeoutMs === undefined ? stepTimeout : options.timeoutMs;
-        const handle = executor.run({
+        // 脚本通道只给「声明支持 script」的执行器（ssh）：脚本文本由执行器直接交给目标端解释，
+        // 而不是在控制端落临时文件再把路径当 argv。local 继续走 helpers.buildScriptInvocation。
+        const carriesScript = executor.supportsScript === true;
+        // 必须 await：ssh 执行器的 run() 是 async，漏掉会拿到 pending Promise，
+        // handle.done 为 undefined，下一步的 finally 直接抛「引擎异常」。
+        const handle = await executor.run({
           argv,
+          script: carriesScript ? options.script : undefined,
+          shell: carriesScript ? options.shell : undefined,
+          scriptArgv: carriesScript ? options.scriptArgv : undefined,
           cwd: options.cwd ?? cwd,
           env: options.env ?? env,
           timeoutMs: requested,
@@ -766,7 +779,11 @@ export function createEngine(deps = {}) {
       return { status: 'failed', exitCode: null, error: `环境变量解析失败：${error?.message ?? error}` };
     }
     const childEnv = { ...envResult.env };
-    if (childEnv.PATH === undefined && process.env.PATH !== undefined) childEnv.PATH = process.env.PATH;
+    // PATH 兜底只对**本机**执行器生效：跨机（ssh）时控制端 PATH 在目标机上无意义，
+    // 注入过去会让 git/systemctl/curl 等找不到（实测 bash 报 exit 127）。远端用登录 shell 自己的 PATH。
+    if (executor?.kind === 'local' && childEnv.PATH === undefined && process.env.PATH !== undefined) {
+      childEnv.PATH = process.env.PATH;
+    }
 
     // 5) logPath
     try {

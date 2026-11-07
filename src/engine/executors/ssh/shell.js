@@ -9,6 +9,9 @@
  */
 import { RemotePathError } from './errors.js';
 
+/** 未显式指定解释器时，用 POSIX 默认 shell 承载脚本文本（远端登录 shell 也一定是 POSIX）。 */
+const DEFAULT_SCRIPT_SHELL = 'sh';
+
 /**
  * 单引号转义一个参数（POSIX 安全）。
  * `a'b` → `'a'\''b'`；空串 → `''`。
@@ -60,18 +63,29 @@ export function isValidEnvName(name) {
  * @param {object} spec
  * @param {string[]} [spec.argv]  argv 数组（会被逐个转义）
  * @param {string} [spec.script]  用户脚本内容（原样执行，不转义——这是用户脚本本身）
+ * @param {string[]} [spec.scriptArgv] 解释器 argv，脚本文本会作为**最后一个参数**追加
+ *   （例如 `['python3','-c']` + script → `'python3' '-c' '<script>'`）。
+ *   与 script 同时存在时优先于 shell：解释器已由调用方解析（可能是远端绝对路径）。
  * @param {string} [spec.cwd]     远端工作目录
  * @param {Record<string, string|undefined|null>} [spec.env]
  * @param {boolean|string} [spec.sudo] true 或用户名
  * @param {string} [spec.shell]   指定解释器（例如 /bin/bash）；只作用于 script
  */
 export function buildCommandLine(spec = {}) {
-  const { argv, script, cwd, env, sudo, shell } = spec;
+  const { argv, script, scriptArgv, cwd, env, sudo, shell } = spec;
 
   let body;
-  if (typeof script === 'string' && script.length > 0) {
-    // 用户脚本：整体交给远端 shell；显式指定解释器时用 -c 包裹（脚本作为独立参数，安全）。
-    body = shell ? `${quoteArg(shell)} -c ${quoteArg(script)}` : script;
+  if (typeof script === 'string' && script.length > 0 && Array.isArray(scriptArgv) && scriptArgv.length > 0) {
+    // 解释器 + 脚本作为独立 argv 参数：脚本内容永远是数据，不会被解释成命令行元字符。
+    body = quoteArgv([...scriptArgv, script]);
+  } else if (typeof script === 'string' && script.length > 0) {
+    // 用户脚本：整体交给远端 shell；显式指定解释器时按**解释器家族**包裹（脚本始终是独立参数，安全）。
+    //
+    // 未指定解释器时不能把脚本文本裸拼在命令行里：一旦存在 env 前缀，
+    // `env 'A=1' set -eu\n...` 会把首行当成 env 要执行的**命令名**（实测
+    // `env: 'set': No such file or directory`，脚本第一行就被吃掉）。
+    // 因此无 shell 时显式交给 POSIX shell 承载，脚本始终是一个独立参数。
+    body = shell ? wrapScript(shell, script) : wrapScript(DEFAULT_SCRIPT_SHELL, script);
   } else if (Array.isArray(argv) && argv.length > 0) {
     body = quoteArgv(argv);
   } else {
@@ -93,6 +107,30 @@ export function buildCommandLine(spec = {}) {
   }
 
   return line;
+}
+
+/**
+ * 用指定解释器包裹一段脚本文本（脚本始终作为**独立参数**，不做字符串拼接）。
+ *
+ * 必须按解释器家族选参数，否则跨平台会静默出错：
+ * - POSIX shell（sh/bash/zsh/…）→ `-c`；
+ * - `cmd`/`cmd.exe` → `/d /s /c`（cmd 没有 `-c`）；
+ * - PowerShell → `-Command`，并显式 `exit $LASTEXITCODE` 传播退出码
+ *   （`-Command` 默认不带出最后一条命令的退出码，会把失败报成 0）。
+ *
+ * @param {string} shell 解释器名或路径
+ * @param {string} script 脚本文本
+ * @returns {string} 形如 `'bash' -c '<script>'`
+ */
+export function wrapScript(shell, script) {
+  const base = String(shell).split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, '');
+  if (base === 'cmd') {
+    return `${quoteArg(shell)} /d /s /c ${quoteArg(script)}`;
+  }
+  if (base === 'powershell' || base === 'pwsh') {
+    return `${quoteArg(shell)} -NoLogo -NoProfile -NonInteractive -Command ${quoteArg(`${script}\nexit $LASTEXITCODE`)}`;
+  }
+  return `${quoteArg(shell)} -c ${quoteArg(script)}`;
 }
 
 /**

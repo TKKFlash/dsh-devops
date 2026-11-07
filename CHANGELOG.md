@@ -3,6 +3,27 @@
 本文件记录 dsh-devops 的所有重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+本轮修复**跨机脚本执行**（SSH 目标上 `shell.exec` / `node.exec` / `python.exec` 全部失败）与一批静默失效字段。
+
+### 修复
+
+**跨机执行（阻断级）**
+- **缺少 `await`**：`engine/run.js` 调用 SSH 执行器的 `run()`（async）时未 await，拿到的是 pending Promise，`handle.done` 为 undefined 并抛「引擎异常」——SSH 路径上第一步就崩。（契约 §3.7）
+- **脚本从不抵达远端**：`shell.exec` 只把脚本写成**控制端**临时文件，再把该路径当 argv 交给执行器；目标机上永远不存在这个文件。现在接入契约本来就留好的 `spec.script` 通道（`argv` 与 `script` 二选一）：`shell.exec` / `node.exec` / `python.exec` 在声明 `supportsScript` 的执行器上直接交付脚本文本。`local` 执行器**保持不变**（其 Windows 编码与 `$LASTEXITCODE` 退出码传播逻辑已验证，改它会丢退出码）。
+- **执行器能力标志贯通惰性代理**：`executors/index.js` 的惰性 SSH 代理此前不暴露任何能力字段，`supportsScript` 必须同时声明在代理与真实执行器上，否则路由静默失效。
+- **工作目录回落到控制端**：`normalizePipeline` 对 job 采字段白名单却漏掉 `workdir`，导致「作业级工作目录」静默失效；`run.js` 的 cwd 优先级补入 `server.probe.workdir` 回退（探测已拿到目标机真实目录）。
+- **控制端 PATH 跨机泄漏**：`run.js` 的 PATH 兜底原先把控制端 `process.env.PATH` 注入并发往远端（远端 `git`/`systemctl` 可能找不到）。现在兜底只对 `kind === 'local'` 生效。
+- **解释器解析不再按控制端平台挑**：SSH 目标上 `python` 常不存在（只有 `python3`），远端按 POSIX 顺序解析。
+- **`shell` 值不再静默降级**：无法识别的解释器名、以及 Windows 控制端上的 POSIX shell 名（`sh`/`bash`/`zsh`/…）此前会被静默当成 `cmd.exe` 执行**且报成功**。现在抛出 `SHELL_UNSUPPORTED` 并给出可照做的建议；显式给出 Git bash 绝对路径时按其真实意图执行。
+- **脚本包裹按解释器家族**：SSH 侧按 `sh/bash/zsh`→`-c`、`cmd`→`/d /s /c`、PowerShell→`-Command`（附 `exit $LASTEXITCODE` 以传播退出码）分别构造，脚本始终作为独立参数，不做字符串拼接。
+- **无解释器 + 有环境变量时脚本首行被吃掉**：`env 'A=1' set -eu` 开头的脚本会让 `env` 把首行当成要执行的命令名（实测 `env: 'set': No such file or directory`，且退出码仍为 0 属静默错误）。未显式指定解释器时改为由 `sh -c` 承载脚本文本。
+- **超长 / 含 NUL 的脚本给出可读错误**：脚本文本改走命令行后受 OpenSSH `MaxCommandLength`（约 256KB）约束，超限时 sshd 会**直接断连**且只回一句 `exec request failed on channel 0`。现在在发送前拦下，报 `REMOTE_COMMAND_TOO_LARGE` / `SCRIPT_CONTAINS_NUL` 并给出「先把脚本落到目标机再执行」的建议。
+
+### 文档
+- 修正 `shell.exec` 字段描述与实际行为不符之处（脚本落盘位置、`auto` 的判定平台）。
+
 ## [0.2.0] - 2026-11-05
 
 本轮聚焦三件事：**把编排界面做成真正好用的工作台**、**补齐 SSH 认证与互操作缺口**、**修掉一批交互硬伤**。

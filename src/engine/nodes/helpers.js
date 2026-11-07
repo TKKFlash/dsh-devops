@@ -121,6 +121,146 @@ const PS_UTF8_PREAMBLE =
   + '$OutputEncoding=[Text.Encoding]::UTF8;'
   + 'try{[Console]::InputEncoding=[Text.Encoding]::UTF8}catch{};';
 
+/* ------------------------------------------------- 解释器名识别（禁止静默降级） */
+
+/** POSIX shell 的基名（Windows 控制端上这些名字必须明确报错，不得降级成 cmd.exe） */
+const POSIX_SHELL_BASES = ['sh', 'bash', 'zsh', 'ksh', 'dash', 'fish'];
+
+/** 已知解释器基名（去掉目录与 .exe 后）：不在其中且不是路径的值一律报错 */
+const KNOWN_SHELL_BASES = new Set([
+  'powershell', 'pwsh', 'cmd',
+  ...POSIX_SHELL_BASES,
+  'python', 'python3', 'node',
+]);
+
+/** 取解释器名的基名：`C:\...\bash.exe` → `bash`（仅用于识别，不参与命令构造） */
+function shellBaseName(name) {
+  const base = String(name ?? '').split(/[\\/]/).pop() ?? '';
+  return base.toLowerCase().replace(/\.exe$/, '');
+}
+
+/** 是否为「调用方显式给出的路径」（含分隔符或绝对路径）：这类值一律保持既有行为 */
+function looksLikeShellPath(name) {
+  const text = String(name ?? '');
+  return text.includes('/') || text.includes('\\') || path.isAbsolute(text);
+}
+
+/** 构造 SHELL_UNSUPPORTED 错误（message 给用户看，suggestion 是可照做的中文建议） */
+function shellUnsupportedError(name, message, suggestion) {
+  const error = new Error(message);
+  error.code = 'SHELL_UNSUPPORTED';
+  error.shell = String(name ?? '');
+  error.suggestion = suggestion;
+  return error;
+}
+
+/** 解释器家族：决定用哪种方式把脚本交给它（名称与显式路径共用） */
+function shellFamily(base) {
+  if (POSIX_SHELL_BASES.includes(base)) return 'posix';
+  if (base === 'powershell' || base === 'pwsh') return 'powershell';
+  if (base === 'cmd') return 'cmd';
+  return 'unknown';
+}
+
+/**
+ * WSL 启动器（不是真正的 POSIX shell）。
+ * C:\Windows\System32\bash.exe 与 %LOCALAPPDATA%\Microsoft\WindowsApps\bash.exe 都会把脚本
+ * 送进 WSL 的另一个文件系统（cwd、路径可见性全不同），比直接报错更难排查（交接文档 §8 方案 C）。
+ */
+function isWslBashLauncher(target) {
+  const text = String(target ?? '').replace(/\//g, '\\').toLowerCase();
+  if (!text.endsWith('\\bash.exe')) return false;
+  return text.includes('\\windowsapps\\') || /\\windows\\system32\\bash\.exe$/.test(text);
+}
+
+/** 目标是否为真实存在的普通文件 */
+async function isExistingFile(target) {
+  const info = await fsp.stat(target).catch(() => null);
+  return Boolean(info && info.isFile());
+}
+
+/**
+ * 校验「显式解释器路径」可用，并解析出它的家族；返回 null 表示「不是显式路径」（走既有名称分支）。
+ *
+ * 为什么必须校验存在性与家族：Windows 分支只认解释器**名称**，显式路径会原样落进最后的
+ * cmd.exe 兜底 —— 等于「放行到静默降级」，恰好是本次要消灭的坑（交接文档 §8 方案 C）。
+ */
+async function resolveExplicitShellPath(raw, requested) {
+  if (!IS_WINDOWS) return null; // POSIX 显式路径：既有行为保持不变（FROZEN 契约 §7）
+  if (!requested || requested === 'auto') return null;
+  if (!looksLikeShellPath(requested)) return null;
+
+  if (!(await isExistingFile(raw))) {
+    throw shellUnsupportedError(
+      raw,
+      '解释器路径不存在或不是文件：「' + raw + '」，已拒绝执行（不会静默降级成 cmd.exe）。',
+      '请确认该路径真实存在。POSIX 脚本请填 Git bash 的绝对路径，例如 C:\\Program Files\\Git\\usr\\bin\\bash.exe。',
+    );
+  }
+  if (isWslBashLauncher(raw)) {
+    throw shellUnsupportedError(
+      raw,
+      '「' + raw + '」是 WSL 启动器，不是真正的 bash：会把脚本送进 WSL 的另一个文件系统。',
+      '请改用 Git bash 的绝对路径（例如 C:\\Program Files\\Git\\usr\\bin\\bash.exe），或把「解释器」改成 powershell / cmd。',
+    );
+  }
+  const family = shellFamily(shellBaseName(requested));
+  if (family === 'unknown') {
+    throw shellUnsupportedError(
+      raw,
+      '无法识别「' + raw + '」是哪一种解释器：不知道该用哪种方式把脚本交给它。',
+      '只支持 POSIX shell（sh/bash/zsh/ksh/dash/fish）、powershell/pwsh、cmd 的路径，例如 C:\\Program Files\\Git\\usr\\bin\\bash.exe。',
+    );
+  }
+  return { family, path: raw };
+}
+
+/**
+ * 校验解释器名可识别；无法识别时抛 `code='SHELL_UNSUPPORTED'` 且带 `suggestion`。
+ *
+ * 为什么必须抛：旧实现把任何不认识的 shell 静默降级成 cmd.exe（Windows）或 /bin/bash（POSIX），
+ * 脚本被另一种语言执行、步骤却报成功——用户完全看不出来（交接文档 §8 方案 C）。
+ *
+ * 保持不变：auto（空值）、powershell/pwsh/cmd/python/python3/node、以及显式路径的既有行为。
+ * Windows 控制端上显式 POSIX shell 名（sh/bash/zsh/ksh/dash/fish）明确报错，
+ * 并提示改用 powershell/cmd 或 Git bash 绝对路径（System32\bash.exe 是 WSL 启动器，语义不同）。
+ */
+function assertSupportedShell(raw, requested) {
+  // auto（空值，或 shell.exec 之外的调用方原样传下来的 'auto'）：既有语义，保持不变
+  if (!requested || requested === 'auto') return;
+  const base = shellBaseName(requested);
+
+  if (IS_WINDOWS) {
+    // 显式路径（含 Git bash 绝对路径）：存在性/家族/WSL 启动器由 resolveExplicitShellPath 负责，
+    // 这里只管「名称」，两者合起来保证不会静默降级成 cmd.exe
+    if (looksLikeShellPath(requested)) return;
+    if (POSIX_SHELL_BASES.includes(base)) {
+      throw shellUnsupportedError(
+        raw,
+        `Windows 控制端不能执行 POSIX shell「${raw}」：它既不是 cmd.exe，也不能自动换成 Git bash`
+        + '（C:\\Windows\\System32\\bash.exe 是 WSL 启动器，语义完全不同）。',
+        '请把「解释器」改用 powershell 或 cmd；'
+        + '或填 Git bash 的绝对路径（真正的 POSIX 环境），例如 C:\\Program Files\\Git\\usr\\bin\\bash.exe。',
+      );
+    }
+    if (KNOWN_SHELL_BASES.has(base)) return; // powershell/cmd/python/node：既有行为保持不变
+    throw shellUnsupportedError(
+      raw,
+      `无法识别的解释器「${raw}」，已拒绝执行（避免被静默当成 cmd.exe 执行）。`,
+      '可选值：auto、powershell、pwsh、cmd、python、python3、node，或解释器的绝对路径。',
+    );
+  }
+
+  if (base === 'posix' || KNOWN_SHELL_BASES.has(base)) return; // 含 sh/bash/zsh/ksh/dash/fish
+  if (looksLikeShellPath(requested)) return; // 显式路径：既有行为不变
+  throw shellUnsupportedError(
+    raw,
+    `无法识别的解释器「${raw}」，已拒绝执行（避免被静默当成默认 shell 执行）。`,
+    '可选值：auto、sh、bash、zsh、ksh、dash、fish、powershell、pwsh、cmd、python、python3、node，'
+    + '或解释器的绝对路径（如 /bin/bash）。',
+  );
+}
+
 /**
  * 构建 shell 执行的 argv 与临时文件信息。
  *
@@ -141,7 +281,13 @@ const PS_UTF8_PREAMBLE =
  */
 export async function buildScriptInvocation(options = {}) {
   const script = String(options.script ?? '');
-  const requested = String(options.shell ?? '').trim().toLowerCase();
+  const rawRequested = String(options.shell ?? '').trim();
+  const requested = rawRequested.toLowerCase();
+  // 先校验解释器名：无法识别的名字必须报错，绝不静默降级成默认 shell。
+  // 必须在 mkdtemp 之前，否则报错会在控制端留下一个空的临时目录。
+  assertSupportedShell(rawRequested, requested);
+  // 显式解释器路径：在 mkdtemp 之前校验，路径不存在/是 WSL 启动器时不在控制端留下临时目录
+  const explicitShell = await resolveExplicitShellPath(rawRequested, requested);
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh-devops-'));
 
   const isPowerShellName = (name) => ['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe'].includes(name);
@@ -153,7 +299,25 @@ export async function buildScriptInvocation(options = {}) {
 
   let argv;
   let file;
-  if (IS_WINDOWS) {
+  if (IS_WINDOWS && explicitShell) {
+    // 显式解释器路径：按家族构造 argv，绝不落进最后的 cmd.exe 兜底（那正是静默降级）。
+    if (explicitShell.family === 'posix') {
+      file = path.join(dir, 'script.sh');
+      await fsp.writeFile(file, script, 'utf8');
+      // Git bash 等 MSYS 运行时：正斜杠路径无歧义（反斜杠会被当成转义）
+      argv = [explicitShell.path, file.replace(/\\/g, '/')];
+    } else if (explicitShell.family === 'powershell') {
+      file = path.join(dir, 'script.ps1');
+      await fsp.writeFile(file, UTF8_BOM + script, 'utf8');
+      const command = PS_UTF8_PREAMBLE + '& ' + psQuote(file) + '; exit $LASTEXITCODE';
+      argv = [explicitShell.path, '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command];
+    } else {
+      // cmd 路径
+      file = path.join(dir, 'script.cmd');
+      await fsp.writeFile(file, script, 'utf8');
+      argv = [explicitShell.path, '/d', '/s', '/c', file];
+    }
+  } else if (IS_WINDOWS) {
     const usePowerShell = isPowerShellName(requested)
       || requested === 'powershell'
       || (!requested && !!process.env.PSModulePath && process.env.DSH_DEVOPS_SHELL !== 'cmd');

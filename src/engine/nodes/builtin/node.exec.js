@@ -59,14 +59,29 @@ export const descriptor = {
       return { exitCode: 1, error: String(error?.message ?? error), outputs: { suggestion: error?.suggestion ?? '' } };
     }
 
-    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh-devops-node-'));
-    const file = path.join(dir, 'script.mjs');
-    await fsp.writeFile(file, script, 'utf8');
+    // 目标执行器是否支持脚本文本通道。
+    // ssh（supportsScript:true）直接把脚本文本整体交给远端解释器，绝不在控制端落临时文件
+    // —— 那个文件在目标机上并不存在（交接文档根因 1）。
+    // local（无该标志）保持既有路径：控制端临时文件 + argv，行为字节级不变。
+    const usesScript = rt.executor?.supportsScript === true;
+
+    // 仅本机路径需要落地临时文件；script 通道下 dir 为空，finally 不做任何清理。
+    let dir = '';
+    let file = '';
+    if (!usesScript) {
+      dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh-devops-node-'));
+      file = path.join(dir, 'script.mjs');
+      await fsp.writeFile(file, script, 'utf8');
+    }
 
     try {
       const env = { ...(rt.env ?? {}), ...toRecord(inputs.env) };
       const result = await spawnCollect(rt, {
-        argv: [interpreter.path, file],
+        // script 通道：脚本作为**独立参数**追加在解释器 argv 之后（FROZEN 接口 §2）。
+        // 无版本时 interpreter.path 是裸 'node'，交由远端 PATH 解析。
+        ...(usesScript
+          ? { script, scriptArgv: [interpreter.path, '--input-type=module', '-e'] }
+          : { argv: [interpreter.path, file] }),
         cwd: inputs.workdir ? resolveWorkPath(rt.cwd, inputs.workdir) : rt.cwd,
         env,
         timeoutMs: Number(inputs.timeoutMs) > 0 ? Number(inputs.timeoutMs) : undefined,
@@ -82,7 +97,7 @@ export const descriptor = {
         },
       });
     } finally {
-      await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+      if (dir) await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
     }
   },
 };
