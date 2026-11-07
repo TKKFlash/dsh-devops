@@ -196,11 +196,38 @@ function rectOf(el, base) {
 }
 
 /**
+ * 运行耗时文本。纯计算、无 hook、无新依赖：
+ * canvas.js 会被不带 useTick/useReducer 的精简桩加载（见 test/client-canvas.test.mjs），
+ * 因此「走秒」必须由调用方（详情页）用 useTick 驱动 now 传进来，本模块只做格式化。
+ */
+function formatElapsed(ms) {
+  const value = Math.max(0, Number(ms) || 0);
+  if (value < 1000) return value + 'ms';
+  const totalSec = value / 1000;
+  if (totalSec < 60) return totalSec.toFixed(1) + 's';
+  const min = Math.floor(totalSec / 60);
+  const sec = Math.floor(totalSec % 60);
+  return min + 'm' + String(sec).padStart(2, '0') + 's';
+}
+
+/** 从执行信息里算出耗时毫秒；进行中的步骤用 now 持续走字。 */
+function elapsedOf(info, now) {
+  if (!info || !info.startedAt) return null;
+  const end = info.finishedAt || (info.status === 'running' ? now : 0);
+  if (!end) return null;
+  return Math.max(0, end - info.startedAt);
+}
+
+/**
  * 块状节点卡片。
- * props: { job, stageId, index, selected, dragging, onSelect, onDragStart, onDragEnd, readonly }
+ * props: { job, stageId, index, selected, dragging, onSelect, onDragStart, onDragEnd, readonly,
+ *          status, progress, now }
  *
  * readonly=true 时同构复用为只读卡片（详情页等）：不设 draggable、不挂拖拽回调、
  * 文案也不再提示拖拽。只读分支不影响编辑器——编辑器不传 readonly，走的仍是原路径。
+ *
+ * status/progress 是**只读展示**用的运行态入参：编辑器不传，行为与过去完全一致；
+ * 详情页传入后卡片会按状态着色（绿=成功/蓝=运行中/红=失败/灰=未执行）并显示耗时。
  */
 function NodeCard(props) {
   const job = props.job;
@@ -222,6 +249,21 @@ function NodeCard(props) {
         : status === 'running' ? 'busy'
           : status === 'canceled' ? 'warn'
             : 'idle';
+
+  /**
+   * 运行态展示（仅详情页传入时出现）：耗时 + 运行中的即时反馈。
+   * 编辑器不传 progress → elapsed 为 null → 不渲染任何新增节点，观感与过去一致。
+   */
+  const progress = props.progress || null;
+  const now = Number(props.now) || Date.now();
+  const elapsed = elapsedOf(progress, now);
+  const running = status === 'running';
+  const statusLabel = running ? '运行中'
+    : status === 'success' ? '成功'
+      : status === 'failed' ? '失败'
+        : status === 'canceled' ? '已取消'
+          : status === 'skipped' ? '已跳过'
+            : null;
 
   const cardProps = {
     className: 'dsh-devops-nodecard',
@@ -275,7 +317,28 @@ function NodeCard(props) {
       h('span', { className: 'dsh-devops-truncate' }, job.server || '（默认）'),
       seconds ? h('span', { className: 'dsh-devops-nodecard-key' }, '超时') : null,
       seconds ? h('span', null, seconds + 's') : null,
+      // 运行态：只在调用方给出 progress 时出现（编辑器不传 → 不渲染）
+      elapsed !== null
+        ? h('span', { className: 'dsh-devops-nodecard-key' }, running ? '已运行' : '耗时')
+        : null,
+      elapsed !== null
+        ? h('span', {
+            'data-role': 'nodecard-elapsed',
+            'data-running': running ? 'true' : undefined,
+            title: running ? '该节点正在执行，耗时实时累加' : '该节点本次执行耗时',
+          }, formatElapsed(elapsed))
+        : null,
     ),
+    // 状态徽标：与卡片左侧色条同一套语义，文字补充给色觉障碍用户
+    statusLabel
+      ? h(
+          'div',
+          { className: 'dsh-devops-nodecard-status', 'data-role': 'nodecard-status', 'data-tone': statusTone },
+          h('span', { className: 'dsh-devops-dot', 'data-tone': statusTone }),
+          h('span', null, statusLabel),
+          running && elapsed !== null ? h('span', { className: 'dsh-devops-hint' }, formatElapsed(elapsed)) : null,
+        )
+      : null,
     needs.length
       ? h(
           'div',
@@ -815,3 +878,7 @@ exports.cleanRemovedNeeds = cleanRemovedNeeds;
 exports.buildEdgePath = buildEdgePath;
 exports.clonePipeline = clonePipeline;
 exports.rectOf = rectOf;
+// 运行态展示的纯函数：详情页（page-pipelines.js）优先复用这两个，
+// 避免同口径逻辑在两处各写一份而漂移。
+exports.formatElapsed = formatElapsed;
+exports.elapsedOf = elapsedOf;

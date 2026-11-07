@@ -470,6 +470,23 @@ const CSS = `
 .dsh-devops-nodecard[data-status="pending"],.dsh-devops-nodecard[data-status="skipped"],
 .dsh-devops-nodecard[data-tone="idle"]{border-left:3px solid var(--dv-idle)}
 
+/* 节点卡运行态徽标 + 耗时刻：与卡片色条同一套 tone 语义，颜色只在这里落地。 */
+.dsh-devops-nodecard-status{
+  display:flex;align-items:center;gap:6px;
+  margin-top:8px;padding-top:6px;
+  border-top:1px dashed var(--dv-border,color-mix(in srgb,var(--dv-idle) 30%,transparent));
+  font-size:11px;line-height:1.4;
+}
+.dsh-devops-nodecard-status[data-tone="ok"]{color:var(--dv-ok)}
+.dsh-devops-nodecard-status[data-tone="error"]{color:var(--dv-err);font-weight:600}
+.dsh-devops-nodecard-status[data-tone="busy"]{color:var(--dv-busy)}
+.dsh-devops-nodecard-status[data-tone="warn"]{color:var(--dv-warn)}
+.dsh-devops-nodecard-status[data-tone="idle"]{color:var(--dv-idle)}
+.dsh-devops-nodecard-elapsed{
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
+}
+.dsh-devops-slot[data-running="true"] [data-role="nodecard-elapsed"]{font-weight:600}
+
 /* 列表行 / 状态点也吃同一套状态色，保证「颜色即状态」在列表里一致。 */
 .dsh-devops-list-row[data-status="failed"],.dsh-devops-list-row[data-tone="error"]{border-left:3px solid var(--dv-err)}
 .dsh-devops-list-row[data-status="running"],.dsh-devops-list-row[data-tone="busy"]{border-left:3px solid var(--dv-busy)}

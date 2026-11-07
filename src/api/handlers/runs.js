@@ -10,7 +10,30 @@ import { readLastEventId } from '../sse.js'
 
 const RUN_STATUSES = new Set(['queued', 'running', 'success', 'failed', 'canceled'])
 
-/** 运行摘要（列表用，避免每条都带完整 steps）。 */
+/**
+ * 步骤摘要：只保留前端渲染节点所需的白名单字段。
+ * 刻意丢掉 logPath / with / env / artifacts 等重字段——列表载荷要轻。
+ * 形状：{ [stepId]: { id, name, status, startedAt, finishedAt, exitCode, error } }
+ */
+function summarizeSteps(run) {
+  const out = {}
+  const source = run?.steps ?? {}
+  for (const [stepId, step] of Object.entries(source)) {
+    if (!step || typeof step !== 'object') continue
+    out[stepId] = {
+      id: step.id ?? stepId,
+      name: step.name ?? stepId,
+      status: step.status ?? 'pending',
+      startedAt: step.startedAt ?? 0,
+      finishedAt: step.finishedAt ?? 0,
+      exitCode: step.exitCode ?? null,
+      error: step.error ?? '',
+    }
+  }
+  return out
+}
+
+/** 运行摘要（列表用：带轻量 steps 供前端上色/计时，但不带完整步骤重字段）。 */
 function summarize(run) {
   const steps = Object.values(run.steps ?? {})
   const counts = { pending: 0, running: 0, success: 0, failed: 0, skipped: 0, canceled: 0 }
@@ -32,6 +55,8 @@ function summarize(run) {
     variables: run.variables ?? {},
     stepCounts: counts,
     stepTotal: steps.length,
+    // 步骤状态/计时的数据源；无步骤时必须是 {}，不能是 undefined
+    steps: summarizeSteps(run),
     parentRunId: run.parentRunId ?? null,
     parentStepId: run.parentStepId ?? null,
   }

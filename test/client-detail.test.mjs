@@ -47,11 +47,14 @@ function stubComponent(name) {
 function makeHooks() {
   const slots = [];
   const cleanups = [];
+  // useTick 的调用记录：用于断言「只在存在 running 节点时才开定时器」（契约 B）
+  const tickCalls = [];
   let index = 0;
   return {
     cleanups,
+    tickCalls,
     reset() { index = 0; },
-    clear() { slots.length = 0; cleanups.length = 0; index = 0; },
+    clear() { slots.length = 0; cleanups.length = 0; tickCalls.length = 0; index = 0; },
     runCleanups() { for (const c of cleanups.splice(0)) if (typeof c === 'function') c(); },
     slots,
     useState(initial) {
@@ -79,7 +82,7 @@ function makeHooks() {
     useCallback(fn) { return fn; },
     useRef() { return { current: null }; },
     useReducer() { return [0, () => {}]; },
-    useTick() { return undefined; },
+    useTick(active) { tickCalls.push(active); return undefined; },
   };
 }
 
@@ -745,6 +748,15 @@ describeMaybe('抽屉是圆角悬浮卡片，且状态色由属性驱动（task-
     assert.equal(toneOfStatus('canceled'), 'warn');
     assert.equal(toneOfStatus('pending'), 'idle');
   });
+
+  test('★ toneOfStatus 严格按冻结契约：success->ok / failed->error / running->busy / canceled->warn / 其余->idle', () => {
+    const toneOfStatus = loaded.exports.toneOfStatus;
+    assert.deepEqual(
+      ['success', 'failed', 'running', 'canceled', 'pending', 'skipped', 'queued', undefined].map(toneOfStatus),
+      ['ok', 'error', 'busy', 'warn', 'idle', 'idle', 'idle', 'idle'],
+      '未列举的状态一律 idle',
+    );
+  });
 });
 
 describeMaybe('悬浮卡片样式由 styles.js 按属性落地（样式归 style-dev；未落地时不误报）', () => {
@@ -908,5 +920,199 @@ describeMaybe('运行页：点「详情」打开悬浮卡片（真实渲染）',
     const tree = StepDetailDrawer({ step: null, runId: '', live: false, now: 0, onClose() {} });
     const layer = findAll(tree, (n) => n.props && n.props['data-role'] === 'step-detail-drawer')[0];
     assert.equal(layer.props['data-open'], 'false', '无步骤时应收起');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 用例：点进流水线看得见阶段与运行历史，节点按运行状态着色并计时（修复三根因）
+ * ------------------------------------------------------------------ */
+
+describeMaybe('流水线详情：完整定义 + 运行历史 + 节点状态着色与计时', () => {
+  const loaded = hasSource ? loadDetail({ api: { listRuns: null } }) : { exports: {}, hooks: makeHooks(), h: makeH() };
+  const PipelineDetail = loaded.exports.PipelineDetail;
+  const PipelineList = loaded.exports.PipelineList;
+  const hooks = loaded.hooks;
+  const render = (props) => { hooks.clear(); return PipelineDetail(props); };
+  const rerender = (props) => { hooks.reset(); return PipelineDetail(props); };
+
+  /** 带 steps 的最近一次运行（契约 A 的轻量形状：{status,startedAt,finishedAt}）。 */
+  const runWithSteps = (steps, status, startedAt) =>
+    run('run-1', status || 'running', startedAt || 5000, steps);
+
+  test('★ 列表「阶段」列读 stageCount（列表接口不带 stages，过去恒显 0/0）', () => {
+    // 真实列表摘要：只有 stageCount/jobCount，没有 stages
+    const summary = { id: 'build-deploy', name: '构建并部署', stageCount: 2, jobCount: 3 };
+    const tree = PipelineList({ pipelines: [summary], runs: [], onCreate() {}, onOpen() {}, onEdit() {}, onRun() {}, onDelete() {} });
+    const text = textOf(tree);
+    assert.match(text, /2 \/ 3/, '阶段/节点数应取 stageCount 与 jobCount，实际：' + text.slice(0, 300));
+  });
+
+  test('stageCountOf / jobCountOf：完整定义优先，摘要走 stageCount/jobCount', () => {
+    const stageCountOf = loaded.exports.stageCountOf;
+    const jobCountOf = loaded.exports.jobCountOf;
+    assert.equal(stageCountOf({ stages: [{}, {}], stageCount: 9 }), 2, '带完整定义时以 stages 为准');
+    assert.equal(stageCountOf({ stageCount: 3 }), 3, '只有摘要时用 stageCount');
+    assert.equal(stageCountOf({}), 0, '两者都没有时为 0');
+    assert.equal(stageCountOf(null), 0);
+    const countFn = (pl) => (pl.stages || []).reduce((n, s) => n + (s.jobs || []).length, 0);
+    assert.equal(jobCountOf({ stages: [{ jobs: [{}, {}] }], jobCount: 9 }, countFn), 2, '带完整定义时按 stages 计算');
+    assert.equal(jobCountOf({ jobCount: 3 }, countFn), 3, '只有摘要时用 jobCount（否则会显示 0）');
+    assert.equal(jobCountOf({}, countFn), 0);
+  });
+
+  test('★ openDetail 必须取完整定义：列表缓存没有 stages 也不能显示「还没有阶段」', async () => {
+    const summary = { id: 'build-deploy', name: '构建并部署', stageCount: 2, jobCount: 3 }; // 无 stages
+    const calls = [];
+    const full = pipeline();
+    const mod = loadDetail({
+      api: {
+        getPipeline: (id) => { calls.push(id); return Promise.resolve(full); },
+        listRuns: () => Promise.resolve([]),
+      },
+    });
+    const P = mod.exports.Pipelines;
+    const props = {
+      state: { pipelines: [summary], runs: [], nodes: [], servers: [], settings: {} },
+      toast: { ok() {}, error() {}, warn() {} },
+      ctx: {}, fieldCtx: { servers: [], envsets: [], snippets: [], defaultServer: 'local' },
+      onReload() {}, onOpenRun() {}, recent: () => [], remember() {},
+      remembered: { pipelinesMode: 'list' }, initialAction: { detail: 'build-deploy' },
+    };
+    mod.hooks.clear();
+    P(props);
+    await new Promise((r) => setTimeout(r, 0));
+    mod.hooks.reset();
+    const tree = P(props);
+    assert.deepEqual(calls, ['build-deploy'], '即使列表缓存命中，也必须按 id 取一次完整定义');
+    const text = textOf(tree);
+    assert.doesNotMatch(text, /还没有阶段/, '有阶段时不得显示空态');
+    assert.match(text, /构建/, '应渲染出真实阶段');
+    assert.equal(findAll(tree, (n) => n.props && n.props['data-role'] === 'readonly-column').length, 2, '两个阶段应渲染成两列');
+  });
+
+  test('★ 取数失败：提示并回列表，绝不白屏', async () => {
+    const errors = [];
+    const mod = loadDetail({ api: { getPipeline: () => Promise.reject(new Error('流水线不存在：gone')), listRuns: () => Promise.resolve([]) } });
+    const P = mod.exports.Pipelines;
+    const props = {
+      state: { pipelines: [], runs: [], nodes: [], servers: [], settings: {} },
+      toast: { ok() {}, error: (m) => errors.push(m), warn() {} },
+      ctx: {}, fieldCtx: { servers: [], envsets: [], snippets: [], defaultServer: 'local' },
+      onReload() {}, onOpenRun() {}, recent: () => [], remember() {},
+      remembered: { pipelinesMode: 'list' }, initialAction: { detail: 'gone' },
+    };
+    mod.hooks.clear();
+    let threw = null;
+    try {
+      P(props);
+      await new Promise((r) => setTimeout(r, 0));
+      mod.hooks.reset();
+      const tree = P(props);
+      assert.match(textOf(tree), /点名称看详情|流水线/, '失败后应回到列表页而不是白屏');
+    } catch (error) {
+      threw = error;
+    }
+    assert.equal(threw, null, '取数失败不得抛错：' + (threw && threw.message));
+    assert.ok(errors.some((m) => /不存在/.test(m)), '应给出可见提示，实际：' + JSON.stringify(errors));
+  });
+
+  test('★ 节点槽位按「最近一次运行」着色：running 绿、failed 红、未跑到保持灰', () => {
+    const steps = {
+      compile: { status: 'failed', startedAt: 5000, finishedAt: 6000 },
+      test: { status: 'running', startedAt: 9000, finishedAt: 0 },
+    };
+    const tree = render(baseProps({ runs: [runWithSteps(steps, 'running', 9000)] }));
+    const slots = findAll(tree, (n) => n.props && n.props['data-role'] === 'readonly-slot');
+    const byJob = Object.fromEntries(slots.map((s) => [s.props['data-job'], s.props]));
+    assert.equal(byJob.compile['data-status'], 'failed', '失败的节点应为 failed');
+    assert.equal(byJob.compile['data-tone'], 'error', '失败 → error 语义色');
+    assert.equal(byJob.test['data-status'], 'running', '运行中的节点应为 running');
+    assert.equal(byJob.test['data-tone'], 'busy', '运行中 → busy 语义色');
+    assert.equal(byJob.test['data-running'], 'true', '运行中的槽位应有 data-running 钩子');
+    // ship 没出现在 steps 里 → 灰（未跑到）
+    assert.equal(byJob.ship['data-status'], 'pending', '未跑到的节点必须保持 pending');
+    assert.equal(byJob.ship['data-tone'], 'idle', 'pending → idle 语义色');
+  });
+
+  test('★ 两条卡片路径都渲染计时与状态徽标（同一 data-role 契约）', () => {
+    const steps = { compile: { status: 'running', startedAt: 9000, finishedAt: 0 } };
+    const props = baseProps({ runs: [runWithSteps(steps, 'running', 9000)] });
+
+    // 路径一：canvas.js 缺失 → 降级 DisplayNodeCard
+    const fallback = render(props);
+    const fCards = findAll(fallback, (n) => n.props && n.props['data-role'] === 'node-card');
+    assert.ok(findAll(fallback, (n) => n.props && n.props['data-role'] === 'nodecard-elapsed').length >= 1, '降级卡片也要有计时');
+    assert.ok(findAll(fallback, (n) => n.props && n.props['data-role'] === 'nodecard-status').length >= 1, '降级卡片也要有状态徽标');
+    assert.match(textOf(fCards[0]), /已运行/, '运行中的卡片应标「已运行」');
+
+    // 路径二：复用 canvas.js 的真 NodeCard
+    const real = loadDetail({}, loadRealCanvas());
+    const realTree = real.exports.PipelineDetail(Object.assign({}, props));
+    const rElapsed = findAll(realTree, (n) => n.props && n.props['data-role'] === 'nodecard-elapsed');
+    const rStatus = findAll(realTree, (n) => n.props && n.props['data-role'] === 'nodecard-status');
+    assert.ok(rElapsed.length >= 1, '真卡片也要有计时');
+    assert.ok(rStatus.length >= 1, '真卡片也要有状态徽标');
+    assert.equal(rStatus[0].props['data-tone'], 'busy', '运行中 → busy');
+  });
+
+  test('★ useTick 只在存在 running 节点时开启（无运行中的节点不空转）', () => {
+    const running = render(baseProps({ runs: [runWithSteps({ compile: { status: 'running', startedAt: 9000 } }, 'running', 9000)] }));
+    assert.ok(running, '应有渲染结果');
+    assert.equal(hooks.tickCalls[hooks.tickCalls.length - 1], true, '有 running 节点时应开走秒');
+
+    render(baseProps({ runs: [runWithSteps({ compile: { status: 'success', startedAt: 1000, finishedAt: 2000 } }, 'success', 2000)] }));
+    assert.equal(hooks.tickCalls[hooks.tickCalls.length - 1], false, '全部结束时不应开走秒');
+  });
+
+  test('★ 运行历史按 pipelineId 单独取（不再依赖被截断的全局 runs），行可点进运行详情', async () => {
+    const queries = [];
+    const mod = loadDetail({
+      api: {
+        listRuns: (q) => { queries.push(q); return Promise.resolve([run('run-h1', 'success', 5000), run('run-h2', 'failed', 6000)]); },
+      },
+    });
+    const D = mod.exports.PipelineDetail;
+    const opened = [];
+    const props = baseProps({ runs: [], onOpenRun: (id) => opened.push(id) });
+    mod.hooks.clear();
+    D(props);
+    await new Promise((r) => setTimeout(r, 0));
+    mod.hooks.reset();
+    const tree = D(props);
+    assert.deepEqual(queries, [{ pipelineId: 'build-deploy', limit: 100 }], '应按 pipelineId 取该流水线全部运行');
+    assert.match(textOf(tree), /run-h1/, '应列出该流水线的运行');
+    assert.match(textOf(tree), /run-h2/, '应列出该流水线的运行（不受全局 limit 50 影响）');
+
+    const rows = findAll(tree, (n) => n.props && n.props['data-role'] === 'run-history-row');
+    assert.equal(rows.length, 2, '每个运行一行');
+    rows[1].props.onClick({ stopPropagation() {} });
+    assert.deepEqual(opened, ['run-h2'], '点行应进入该运行的详情');
+    // 行内「查看运行」按钮也要能进详情
+    const btn = findAll(rows[0], (n) => n.stub === 'Button' && String(n.props.label) === '查看运行')[0];
+    assert.ok(btn, '应有「查看运行」按钮');
+    btn.props.onClick({ stopPropagation() {} });
+    assert.deepEqual(opened, ['run-h2', 'run-h1'], '点按钮也应进入该运行的详情');
+  });
+
+  test('触发方式与耗时的展示文案', () => {
+    const triggerLabel = loaded.exports.triggerLabel;
+    const runDurationText = loaded.exports.runDurationText;
+    assert.equal(triggerLabel(''), '手动触发');
+    assert.equal(triggerLabel('manual'), '手动触发');
+    assert.equal(triggerLabel('retry'), '重试');
+    assert.equal(triggerLabel('webhook'), 'Webhook');
+    assert.equal(triggerLabel('自定义'), '自定义', '未知触发方式原样显示，不编造');
+    // 桩 h.js 把 fmtDuration 换成 'Nms'，这里按桩口径断言（生产口径由 h.js 保证）
+    assert.equal(runDurationText({ durationMs: 5000 }, 0), '5000ms', '优先用后端 durationMs');
+    assert.equal(runDurationText({ startedAt: 1000, finishedAt: 4000 }, 0), '3000ms', '没有 durationMs 时按时间戳算');
+    assert.equal(runDurationText({}, 0), '—', '没有开始时间时给出占位符');
+  });
+
+  test('空阶段仍然显示「还没有阶段」（兼容性硬约束，回归）', () => {
+    const p = pipeline();
+    p.stages = [];
+    const tree = render(baseProps({ pipeline: p }));
+    assert.equal(findAll(tree, (n) => n.props && n.props['data-role'] === 'readonly-column').length, 0);
+    assert.match(textOf(tree), /还没有阶段/);
   });
 });

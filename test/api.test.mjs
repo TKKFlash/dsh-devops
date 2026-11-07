@@ -303,6 +303,93 @@ describe('api/router', { skip: routerSuite.skip }, () => {
     assert.equal(r.json?.ok, true);
   });
 
+  test('★ runs 摘要带轻量 steps（节点状态/计时的数据源）', async () => {
+    const runId = 'run-summary-1';
+    await store.runs.put(runId, {
+      id: runId,
+      pipelineId: 'api-runs-summary',
+      pipelineName: '摘要流水线',
+      status: 'failed',
+      trigger: 'manual',
+      startedAt: 1000,
+      finishedAt: 2500,
+      variables: { ENV: 'test' },
+      steps: {
+        // 带齐真实 step 的重字段，验证摘要是白名单投影而非整对象透传
+        compile: {
+          id: 'compile', name: '编译', stage: 'build', node: 'shell.exec', server: 'local',
+          status: 'success', phase: 'queued', startedAt: 1000, finishedAt: 1800, exitCode: 0,
+          error: '', logPath: '/tmp/should-not-leak.log', with: { cmd: 'echo hi' },
+          env: ['A=1'], artifacts: ['a.txt'], attempt: 1, bytes: 12, outputs: {},
+        },
+        deploy: {
+          id: 'deploy', name: '部署', stage: 'deploy', node: 'shell.exec', server: 'local',
+          status: 'failed', phase: 'queued', startedAt: 1800, finishedAt: 2500, exitCode: 1,
+          error: '退出码 1', logPath: '/tmp/should-not-leak-2.log', with: {}, env: [],
+          artifacts: [], attempt: 1, bytes: 3, outputs: {},
+        },
+      },
+    });
+
+    const r = await request(router, { url: `${API}/runs?pipelineId=api-runs-summary` });
+    assert.equal(r.status, 200, `实际 ${r.status} ${r.text.slice(0, 200)}`);
+    const run = (r.json?.value ?? []).find((x) => x.id === runId);
+    assert.ok(run, `列表应含 ${runId}，实际 ${JSON.stringify((r.json?.value ?? []).map((x) => x.id))}`);
+
+    assert.ok(run.steps && typeof run.steps === 'object', '摘要必须带 steps 对象');
+    assert.equal(run.steps.compile.status, 'success', '应带每个步骤的 status');
+    assert.equal(run.steps.deploy.status, 'failed', '失败步骤的 status 必须如实透出');
+    assert.equal(run.steps.compile.id, 'compile');
+    assert.equal(run.steps.compile.name, '编译', '应带 name');
+    assert.equal(run.steps.compile.startedAt, 1000, '应带 startedAt 供前端计时');
+    assert.equal(run.steps.compile.finishedAt, 1800, '应带 finishedAt 供前端计时');
+    assert.equal(run.steps.compile.exitCode, 0);
+    assert.equal(run.steps.deploy.exitCode, 1);
+    assert.equal(run.steps.deploy.error, '退出码 1');
+
+    // 列表载荷要轻：重字段不得出现在摘要步骤里
+    for (const heavy of ['logPath', 'with', 'env', 'artifacts', 'outputs', 'attempt', 'bytes', 'stage', 'node', 'server', 'phase']) {
+      assert.ok(!(heavy in run.steps.compile), `摘要步骤不应带重字段 ${heavy}`);
+    }
+
+    // 既有字段不得回归
+    assert.deepEqual(
+      run.stepCounts,
+      { pending: 0, running: 0, success: 1, failed: 1, skipped: 0, canceled: 0 },
+      `stepCounts 不应回归，实际 ${JSON.stringify(run.stepCounts)}`,
+    );
+    assert.equal(run.stepTotal, 2, 'stepTotal 不应回归');
+    assert.deepEqual(run.variables, { ENV: 'test' }, 'variables 不应回归');
+    assert.equal(run.durationMs, 1500, 'durationMs 不应回归');
+    assert.equal(run.pipelineName, '摘要流水线');
+    assert.equal(run.parentRunId, null);
+  });
+
+  test('★ runs 摘要：无 steps / 缺 steps 字段时必须是 {}', async () => {
+    const emptyId = 'run-summary-empty';
+    await store.runs.put(emptyId, {
+      id: emptyId, pipelineId: 'api-runs-empty', pipelineName: '空流水线',
+      status: 'success', trigger: 'manual', startedAt: 10, finishedAt: 20, variables: {}, steps: {},
+    });
+    const r = await request(router, { url: `${API}/runs?pipelineId=api-runs-empty` });
+    const run = (r.json?.value ?? []).find((x) => x.id === emptyId);
+    assert.ok(run, '应能取到空步骤运行');
+    assert.deepEqual(run.steps, {}, `无步骤时 steps 必须是 {}，实际 ${JSON.stringify(run.steps)}`);
+    assert.equal(run.stepTotal, 0);
+
+    // steps 字段整个缺失（老数据/运行刚建）也要给 {}
+    const missingId = 'run-summary-missing';
+    await store.runs.put(missingId, {
+      id: missingId, pipelineId: 'api-runs-missing', pipelineName: '缺字段',
+      status: 'queued', trigger: 'manual', startedAt: 0, finishedAt: 0, variables: {},
+    });
+    const r2 = await request(router, { url: `${API}/runs?pipelineId=api-runs-missing` });
+    const run2 = (r2.json?.value ?? []).find((x) => x.id === missingId);
+    assert.ok(run2, '应能取到缺 steps 字段的运行');
+    assert.deepEqual(run2.steps, {}, `steps 字段缺失时也必须是 {}，实际 ${JSON.stringify(run2.steps)}`);
+    assert.deepEqual(run2.stepCounts, { pending: 0, running: 0, success: 0, failed: 0, skipped: 0, canceled: 0 });
+  });
+
   test('导出接口：缺 id 时明确报错', async () => {
     const r = await request(router, { url: `${API}/export?kind=pipeline` });
     assert.ok(r.status >= 400, `缺 id 必须报错，实际 ${r.status}`);

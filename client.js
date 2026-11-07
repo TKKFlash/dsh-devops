@@ -722,6 +722,23 @@ const CSS = `
 .dsh-devops-nodecard[data-status="pending"],.dsh-devops-nodecard[data-status="skipped"],
 .dsh-devops-nodecard[data-tone="idle"]{border-left:3px solid var(--dv-idle)}
 
+/* 节点卡运行态徽标 + 耗时刻：与卡片色条同一套 tone 语义，颜色只在这里落地。 */
+.dsh-devops-nodecard-status{
+  display:flex;align-items:center;gap:6px;
+  margin-top:8px;padding-top:6px;
+  border-top:1px dashed var(--dv-border,color-mix(in srgb,var(--dv-idle) 30%,transparent));
+  font-size:11px;line-height:1.4;
+}
+.dsh-devops-nodecard-status[data-tone="ok"]{color:var(--dv-ok)}
+.dsh-devops-nodecard-status[data-tone="error"]{color:var(--dv-err);font-weight:600}
+.dsh-devops-nodecard-status[data-tone="busy"]{color:var(--dv-busy)}
+.dsh-devops-nodecard-status[data-tone="warn"]{color:var(--dv-warn)}
+.dsh-devops-nodecard-status[data-tone="idle"]{color:var(--dv-idle)}
+.dsh-devops-nodecard-elapsed{
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
+}
+.dsh-devops-slot[data-running="true"] [data-role="nodecard-elapsed"]{font-weight:600}
+
 /* 列表行 / 状态点也吃同一套状态色，保证「颜色即状态」在列表里一致。 */
 .dsh-devops-list-row[data-status="failed"],.dsh-devops-list-row[data-tone="error"]{border-left:3px solid var(--dv-err)}
 .dsh-devops-list-row[data-status="running"],.dsh-devops-list-row[data-tone="busy"]{border-left:3px solid var(--dv-busy)}
@@ -4198,11 +4215,38 @@ function rectOf(el, base) {
 }
 
 /**
+ * 运行耗时文本。纯计算、无 hook、无新依赖：
+ * canvas.js 会被不带 useTick/useReducer 的精简桩加载（见 test/client-canvas.test.mjs），
+ * 因此「走秒」必须由调用方（详情页）用 useTick 驱动 now 传进来，本模块只做格式化。
+ */
+function formatElapsed(ms) {
+  const value = Math.max(0, Number(ms) || 0);
+  if (value < 1000) return value + 'ms';
+  const totalSec = value / 1000;
+  if (totalSec < 60) return totalSec.toFixed(1) + 's';
+  const min = Math.floor(totalSec / 60);
+  const sec = Math.floor(totalSec % 60);
+  return min + 'm' + String(sec).padStart(2, '0') + 's';
+}
+
+/** 从执行信息里算出耗时毫秒；进行中的步骤用 now 持续走字。 */
+function elapsedOf(info, now) {
+  if (!info || !info.startedAt) return null;
+  const end = info.finishedAt || (info.status === 'running' ? now : 0);
+  if (!end) return null;
+  return Math.max(0, end - info.startedAt);
+}
+
+/**
  * 块状节点卡片。
- * props: { job, stageId, index, selected, dragging, onSelect, onDragStart, onDragEnd, readonly }
+ * props: { job, stageId, index, selected, dragging, onSelect, onDragStart, onDragEnd, readonly,
+ *          status, progress, now }
  *
  * readonly=true 时同构复用为只读卡片（详情页等）：不设 draggable、不挂拖拽回调、
  * 文案也不再提示拖拽。只读分支不影响编辑器——编辑器不传 readonly，走的仍是原路径。
+ *
+ * status/progress 是**只读展示**用的运行态入参：编辑器不传，行为与过去完全一致；
+ * 详情页传入后卡片会按状态着色（绿=成功/蓝=运行中/红=失败/灰=未执行）并显示耗时。
  */
 function NodeCard(props) {
   const job = props.job;
@@ -4224,6 +4268,21 @@ function NodeCard(props) {
         : status === 'running' ? 'busy'
           : status === 'canceled' ? 'warn'
             : 'idle';
+
+  /**
+   * 运行态展示（仅详情页传入时出现）：耗时 + 运行中的即时反馈。
+   * 编辑器不传 progress → elapsed 为 null → 不渲染任何新增节点，观感与过去一致。
+   */
+  const progress = props.progress || null;
+  const now = Number(props.now) || Date.now();
+  const elapsed = elapsedOf(progress, now);
+  const running = status === 'running';
+  const statusLabel = running ? '运行中'
+    : status === 'success' ? '成功'
+      : status === 'failed' ? '失败'
+        : status === 'canceled' ? '已取消'
+          : status === 'skipped' ? '已跳过'
+            : null;
 
   const cardProps = {
     className: 'dsh-devops-nodecard',
@@ -4277,7 +4336,28 @@ function NodeCard(props) {
       h('span', { className: 'dsh-devops-truncate' }, job.server || '（默认）'),
       seconds ? h('span', { className: 'dsh-devops-nodecard-key' }, '超时') : null,
       seconds ? h('span', null, seconds + 's') : null,
+      // 运行态：只在调用方给出 progress 时出现（编辑器不传 → 不渲染）
+      elapsed !== null
+        ? h('span', { className: 'dsh-devops-nodecard-key' }, running ? '已运行' : '耗时')
+        : null,
+      elapsed !== null
+        ? h('span', {
+            'data-role': 'nodecard-elapsed',
+            'data-running': running ? 'true' : undefined,
+            title: running ? '该节点正在执行，耗时实时累加' : '该节点本次执行耗时',
+          }, formatElapsed(elapsed))
+        : null,
     ),
+    // 状态徽标：与卡片左侧色条同一套语义，文字补充给色觉障碍用户
+    statusLabel
+      ? h(
+          'div',
+          { className: 'dsh-devops-nodecard-status', 'data-role': 'nodecard-status', 'data-tone': statusTone },
+          h('span', { className: 'dsh-devops-dot', 'data-tone': statusTone }),
+          h('span', null, statusLabel),
+          running && elapsed !== null ? h('span', { className: 'dsh-devops-hint' }, formatElapsed(elapsed)) : null,
+        )
+      : null,
     needs.length
       ? h(
           'div',
@@ -4817,6 +4897,10 @@ exports.cleanRemovedNeeds = cleanRemovedNeeds;
 exports.buildEdgePath = buildEdgePath;
 exports.clonePipeline = clonePipeline;
 exports.rectOf = rectOf;
+// 运行态展示的纯函数：详情页（page-pipelines.js）优先复用这两个，
+// 避免同口径逻辑在两处各写一份而漂移。
+exports.formatElapsed = formatElapsed;
+exports.elapsedOf = elapsedOf;
 });
 
 __def("./ai.js", function (module, exports, require) {
@@ -6294,7 +6378,7 @@ __def("./page-pipelines.js", function (module, exports, require) {
  *  - 新增详情视图：定义概览、阶段与节点、最近运行，以及「编辑」「运行」入口。
  *    详情里的「编辑」复用 app.js 的 navigate('pipelines', { edit: id }) 机制。
  */
-const { h, useState, useEffect, useMemo, clone, fmtAgo, fmtTime, fmtDuration } = require('./h.js');
+const { h, useState, useEffect, useMemo, clone, fmtAgo, fmtTime, fmtDuration, useTick } = require('./h.js');
 const { Button, TextInput, Select, Card, Empty, Chip, Banner, Modal, Field, KV } = require('./ui.js');
 const { api } = require('./api.js');
 const { PipelineEditor, detectScheduling, countJobs } = require('./editor.js');
@@ -6311,6 +6395,83 @@ try {
   canvasModule = {};
 }
 const { RUN_STATUS_TEXT, runTone } = require('./state.js');
+
+/* ------------------------------------------------------------------ *
+ * 运行态展示的纯计算（无 hook、无新依赖）
+ *
+ * 画布模块 canvas.js 的同名实现若可用就复用，保证「真卡片 / 降级卡片」
+ * 两条路径文案完全一致；未导出时用这里同口径的实现兜底。
+ * ------------------------------------------------------------------ */
+
+/** 运行耗时文本（与 canvas.js 同口径：<1s 走毫秒，<60s 保留一位小数，再往上 m s）。 */
+function formatElapsed(ms) {
+  const value = Math.max(0, Number(ms) || 0);
+  if (value < 1000) return value + 'ms';
+  const totalSec = value / 1000;
+  if (totalSec < 60) return totalSec.toFixed(1) + 's';
+  const min = Math.floor(totalSec / 60);
+  const sec = Math.floor(totalSec % 60);
+  return min + 'm' + String(sec).padStart(2, '0') + 's';
+}
+
+/** 从执行信息算耗时毫秒；进行中的步骤用 now 持续走字（finishedAt 为 0 时不算静态耗时）。 */
+function elapsedOf(info, now) {
+  if (!info || !info.startedAt) return null;
+  const end = info.finishedAt || (info.status === 'running' ? now : 0);
+  if (!end) return null;
+  return Math.max(0, end - info.startedAt);
+}
+
+const elapsedText = typeof canvasModule.formatElapsed === 'function' ? canvasModule.formatElapsed : formatElapsed;
+const elapsedMsOf = typeof canvasModule.elapsedOf === 'function' ? canvasModule.elapsedOf : elapsedOf;
+
+/** 运行状态的中文文案（与画布卡片一致；未执行/排队不显示徽标）。 */
+const STEP_STATUS_LABEL = {
+  running: '运行中',
+  success: '成功',
+  failed: '失败',
+  canceled: '已取消',
+  skipped: '已跳过',
+};
+
+/** 运行耗时文案：优先用摘要里的 durationMs（后端在运行中也会带），否则按时间戳现算。 */
+function runDurationText(run, now) {
+  if (!run) return '—';
+  if (Number.isFinite(run.durationMs) && run.durationMs > 0) return fmtDuration(run.durationMs);
+  if (!run.startedAt) return '—';
+  return fmtDuration((run.finishedAt || now) - run.startedAt);
+}
+
+/** 触发方式的展示文案（运行摘要里的 trigger 是自由字符串，未知值原样显示）。 */
+function triggerLabel(trigger) {
+  const value = trigger === null || trigger === undefined ? '' : String(trigger);
+  if (!value || value === 'manual') return '手动触发';
+  if (value === 'retry') return '重试';
+  if (value === 'schedule' || value === 'cron' || value === 'timer') return '定时';
+  if (value === 'webhook') return 'Webhook';
+  return value;
+}
+
+/**
+ * 流水线摘要里的阶段数。
+ * GET /api/pipelines 只给 stageCount/jobCount，不带 stages；
+ * 带上完整定义时以 stages 为准（真值优先），缺失时才回退 stageCount。
+ */
+function stageCountOf(pipeline) {
+  const p = pipeline || {};
+  if (Array.isArray(p.stages)) return p.stages.length;
+  const count = Number(p.stageCount);
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+/** 节点数：与 stageCountOf 同理 —— 列表摘要不带 stages，必须用后端的 jobCount。 */
+function jobCountOf(pipeline, countFn) {
+  const p = pipeline || {};
+  if (Array.isArray(p.stages) && typeof countFn === 'function') return countFn(p);
+  const count = Number(p.jobCount);
+  if (Number.isFinite(count) && count >= 0) return count;
+  return typeof countFn === 'function' ? countFn(p) : 0;
+}
 
 /* ------------------------------------------------------------------ *
  * 视图记忆：离开 DevOps 界面再回来时恢复「视图位置」
@@ -6579,7 +6740,7 @@ function PipelineList(props) {
                   onOpen: props.onOpen,
                 })),
                 h('td', { className: 'dsh-devops-monospace' }, p.id),
-                h('td', null, (p.stages || []).length + ' / ' + countJobs(p)),
+                h('td', null, stageCountOf(p) + ' / ' + jobCountOf(p, countJobs)),
                 h('td', null, h(Chip, { tone: detectScheduling(p) === 'dag' ? 'busy' : 'idle' }, detectScheduling(p) === 'dag' ? 'DAG' : '阶段')),
                 h('td', null, p.category || '—'),
                 h('td', null, (p.tags || []).map((t) => h('span', { key: t, className: 'dsh-devops-tag', style: { marginRight: '3px' } }, t))),
@@ -6606,6 +6767,18 @@ function PipelineList(props) {
 function DisplayNodeCard(props) {
   const job = props.job || {};
   const seconds = job.timeoutMs ? Math.round(job.timeoutMs / 1000) : 0;
+  const status = props.status || 'pending';
+  const statusTone = toneOfStatus(status);
+  const running = status === 'running';
+  /**
+   * 运行态：父层给了 progress（该节点最近一次运行的执行信息）才显示计时与徽标。
+   * 契约与 canvas.js 的 NodeCard 完全一致：data-role="nodecard-elapsed" / "nodecard-status"，
+   * 走秒由父层的 useTick 驱动 now，本组件只做格式化。
+   */
+  const progress = props.progress || null;
+  const now = Number(props.now) || Date.now();
+  const elapsed = elapsedMsOf(progress, now);
+  const statusLabel = STEP_STATUS_LABEL[status] || null;
   return h(
     'div',
     {
@@ -6614,8 +6787,8 @@ function DisplayNodeCard(props) {
       'data-readonly': 'true',
       'data-selected': props.selected ? 'true' : undefined,
       // 状态色：由父层给定，颜色交给 CSS 的 [data-status]/[data-tone]
-      'data-status': props.status || 'pending',
-      'data-tone': toneOfStatus(props.status || 'pending'),
+      'data-status': status,
+      'data-tone': statusTone,
       onClick: (e) => {
         if (e && e.stopPropagation) e.stopPropagation();
         if (props.onSelect) props.onSelect(job.id);
@@ -6638,7 +6811,28 @@ function DisplayNodeCard(props) {
       h('span', { className: 'dsh-devops-truncate' }, job.server || '（默认）'),
       seconds ? h('span', { className: 'dsh-devops-nodecard-key' }, '超时') : null,
       seconds ? h('span', null, seconds + 's') : null,
+      // 运行态：与 canvas.js 的 NodeCard 同一契约（同一 data-role，样式由 styles.js 共用）
+      elapsed !== null
+        ? h('span', { className: 'dsh-devops-nodecard-key' }, running ? '已运行' : '耗时')
+        : null,
+      elapsed !== null
+        ? h('span', {
+            'data-role': 'nodecard-elapsed',
+            'data-running': running ? 'true' : undefined,
+            title: running ? '该节点正在执行，耗时实时累加' : '该节点本次执行耗时',
+          }, elapsedText(elapsed))
+        : null,
     ),
+    // 状态徽标：与卡片左侧色条同一套语义，文字补充给色觉障碍用户
+    statusLabel
+      ? h(
+          'div',
+          { className: 'dsh-devops-nodecard-status', 'data-role': 'nodecard-status', 'data-tone': statusTone },
+          h('span', { className: 'dsh-devops-dot', 'data-tone': statusTone }),
+          h('span', null, statusLabel),
+          running && elapsed !== null ? h('span', { className: 'dsh-devops-hint' }, elapsedText(elapsed)) : null,
+        )
+      : null,
     (job.needs || []).length
       ? h(
           'div',
@@ -6710,24 +6904,66 @@ function toneOfStatus(status) {
   return 'idle';
 }
 
+/** 该流水线最近一次运行（按 startedAt 最大；同刻取 id 较大者，保证结果稳定）。 */
+function latestRunOf(runs, pipelineId) {
+  const mine = (runs || []).filter((run) => run && run.pipelineId === pipelineId);
+  let latest = null;
+  for (const run of mine) {
+    if (!latest) {
+      latest = run;
+      continue;
+    }
+    const delta = (run.startedAt || 0) - (latest.startedAt || 0);
+    if (delta > 0 || (delta === 0 && String(run.id) > String(latest.id))) latest = run;
+  }
+  return latest;
+}
+
 /**
- * 一组运行里，某节点的**最近一次执行状态**（jobId → status）。
- * 运行没有 step 明细时返回 null，卡片保持中性 —— 不猜状态。
+ * 该流水线最近一次运行里各节点的执行信息（jobId → { status, startedAt, finishedAt, runId }）。
+ * 运行没有 steps 明细时返回空表，卡片保持中性 —— 不猜状态。
+ */
+function stepInfoMap(runs, pipelineId) {
+  // 契约 B：状态来自该流水线「最近一次运行」（startedAt 最大）的 steps，
+  // 而不是历次运行的「每个节点最近一次」拼盘 —— 那样会把上一轮的绿点带到本轮。
+  const latest = latestRunOf(runs, pipelineId);
+  const out = {};
+  const steps = latest && latest.steps;
+  if (!steps || typeof steps !== 'object') return out;
+  for (const stepId of Object.keys(steps)) {
+    const info = normalizeStep(steps[stepId]);
+    if (!info) continue;
+    out[stepId] = {
+      status: info.status,
+      startedAt: info.startedAt || 0,
+      finishedAt: info.finishedAt || 0,
+      runId: (latest && latest.id) || '',
+    };
+  }
+  return out;
+}
+
+/** 归一化单个 step：兼容轻量摘要对象 {status,startedAt,finishedAt} 与裸状态字符串。 */
+function normalizeStep(step) {
+  if (step === null || step === undefined) return null;
+  if (typeof step === 'string') return { status: step, startedAt: 0, finishedAt: 0 };
+  if (typeof step !== 'object') return null;
+  return {
+    status: step.status || 'pending',
+    startedAt: step.startedAt || 0,
+    finishedAt: step.finishedAt || 0,
+  };
+}
+
+/**
+ * 该流水线最近一次运行里各节点的**状态**（jobId → status 字符串）。
+ * 返回平表而不是对象：调用方（只读画布）只需要一个可比较的状态值；
+ * 计时等细节走 stepInfoMap。
  */
 function stepStatusMap(runs, pipelineId) {
-  const mine = (runs || [])
-    .filter((run) => run && run.pipelineId === pipelineId)
-    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+  const info = stepInfoMap(runs, pipelineId);
   const out = {};
-  for (const run of mine) {
-    const steps = run.steps;
-    if (!steps || typeof steps !== 'object') continue;
-    for (const stepId of Object.keys(steps)) {
-      if (!Object.prototype.hasOwnProperty.call(out, stepId)) {
-        out[stepId] = (steps[stepId] && steps[stepId].status) || null;
-      }
-    }
-  }
+  for (const stepId of Object.keys(info)) out[stepId] = info[stepId].status;
   return out;
 }
 
@@ -6743,6 +6979,9 @@ function ReadonlyBoard(props) {
    * 这里只负责把状态挂成 data-status / data-tone，颜色一律交给 CSS。
    */
   const statusOf = props.stepStatusOf || (() => null);
+  /** 执行信息：{ status, startedAt, finishedAt }，用于计时（未提供时卡片不显示耗时）。 */
+  const infoOf = props.stepInfoOf || (() => null);
+  const now = Number(props.now) || Date.now();
   /** 阶段状态：任一节点失败 → failed；有运行中 → running；全部成功 → success；否则 pending。 */
   function stageStatus(stage) {
     const list = (stage.jobs || []).map((job) => statusOf(job.id)).filter(Boolean);
@@ -6798,6 +7037,8 @@ function ReadonlyBoard(props) {
                 'data-readonly': 'true',
                 'data-status': statusOf(job.id) || 'pending',
                 'data-tone': toneOfStatus(statusOf(job.id) || 'pending'),
+                // 运行中的槽位给个稳定钩子：styles.js 用它加粗计时文字（.dsh-devops-slot[data-running="true"]）
+                'data-running': statusOf(job.id) === 'running' ? 'true' : undefined,
                 role: 'button',
                 tabIndex: 0,
                 title: '查看节点「' + (job.name || job.id) + '」的信息与日志',
@@ -6825,6 +7066,9 @@ function ReadonlyBoard(props) {
                 index: jobIndexInStage + 1,
                 readonly: true,
                 status: statusOf(job.id) || 'pending',
+                // 运行态与计时：两条卡片路径（真 NodeCard / 降级 DisplayNodeCard）契约一致
+                progress: infoOf(job.id) || null,
+                now,
                 selected: props.selectedJob === job.id,
                 onSelect: props.onSelectJob,
               }),
@@ -7112,9 +7356,51 @@ function PipelineDetail(props) {
     }
     return out;
   }, [pipeline]);
-  // 节点/阶段状态：来自该流水线最近各次运行里该步骤的状态，用于 data-status 着色
-  const stepStatus = useMemo(() => stepStatusMap(runs, pipeline.id), [runs, pipeline.id]);
-  const statusOfStep = (jobId) => stepStatus[jobId] || null;
+  // 节点/阶段状态：来自该流水线「最近一次运行」里各步骤的状态（契约 B），用于 data-status 着色
+  const stepInfo = useMemo(() => stepInfoMap(runs, pipeline.id), [runs, pipeline.id]);
+  const statusOfStep = (jobId) => (stepInfo[jobId] && stepInfo[jobId].status) || null;
+  const infoOfStep = (jobId) => stepInfo[jobId] || null;
+
+  /**
+   * 运行历史：**按 pipelineId 单独取**该流水线的全部运行。
+   * 不能只用 props.state.runs —— 它被 limit 50 截断且混有其它流水线的运行，
+   * 会让「每一个运行的记录」缺斤少两。取数失败时降级回全局 runs，绝不空白。
+   */
+  const [historyRuns, setHistoryRuns] = useState(null);
+  // 刷新令牌：点「刷新」时自增，让下面这个 effect 重新取一次运行历史
+  const [historyToken, setHistoryToken] = useState(0);
+  useEffect(() => {
+    if (!pipeline.id) return undefined;
+    let alive = true;
+    const load = typeof api.listRuns === 'function' ? api.listRuns({ pipelineId: pipeline.id, limit: 100 }) : null;
+    if (!load || typeof load.then !== 'function') return undefined;
+    load.then((result) => {
+      if (!alive) return;
+      const list = Array.isArray(result) ? result : (result && (result.runs || result.items)) || null;
+      if (Array.isArray(list)) setHistoryRuns(list);
+    }).catch(() => {
+      /* 取数失败：保留 props.state.runs 兜底，不打断详情页 */
+    });
+    return () => {
+      alive = false;
+    };
+  }, [pipeline.id, historyToken]);
+
+  const history = Array.isArray(historyRuns) ? historyRuns : mine;
+
+  /** 刷新：既刷新全局状态，也让本页的运行历史重新取一次。 */
+  function reloadAll() {
+    setHistoryToken((n) => n + 1);
+    if (typeof props.onReload === 'function') props.onReload();
+  }
+
+  /**
+   * 走秒：只有存在 running 节点时才开定时器（契约 B）。
+   * 无运行中的节点时不订阅，避免空转重渲染。
+   */
+  const hasRunningNode = Object.keys(stepInfo).some((stepId) => stepInfo[stepId].status === 'running');
+  useTick(hasRunningNode);
+
   const current = allJobs.find((entry) => entry.job.id === selectedJob) || null;
   const currentRun = current ? latestRunForStep(runs, pipeline.id, current.job.id) : null;
   const descriptor = current ? nodes.find((node) => node && node.type === current.job.node) || null : null;
@@ -7130,7 +7416,7 @@ function PipelineDetail(props) {
       h(Chip, { tone: scheduling === 'dag' ? 'busy' : 'idle' }, scheduling === 'dag' ? 'DAG 调度' : '阶段调度'),
       active.length ? h(Chip, { tone: 'busy', dot: true }, active.length + ' 个运行中') : null,
       h('div', { className: 'dsh-devops-spacer' }),
-      h(Button, { size: 'sm', icon: 'refresh', label: '刷新', onClick: props.onReload }),
+      h(Button, { size: 'sm', icon: 'refresh', label: '刷新', onClick: reloadAll }),
       h(Button, { size: 'sm', icon: 'play', label: '运行', variant: 'primary', onClick: () => props.onRun(pipeline) }),
       h(Button, { size: 'sm', label: '编辑', onClick: () => props.onEdit(pipeline.id) }),
     ),
@@ -7178,6 +7464,8 @@ function PipelineDetail(props) {
           pipeline,
           selectedJob,
           stepStatusOf: statusOfStep,
+          stepInfoOf: infoOfStep,
+          now: Date.now(),
           onSelectJob: setSelectedJob,
         }),
       ),
@@ -7189,7 +7477,8 @@ function PipelineDetail(props) {
           'div',
           { className: 'dsh-devops-inspector-scroll' },
           h('h3', { className: 'dsh-devops-card-title', style: { marginBottom: '8px' } }, '最近运行'),
-          mine.length === 0
+          h('div', { className: 'dsh-devops-hint', style: { marginBottom: '6px' } }, '这条流水线的运行历史，点任意一行进入运行详情看参数与日志'),
+          history.length === 0
             ? h(Empty, { text: '这条流水线还没有运行记录，点右上角「运行」试试' })
             : h(
                 'table',
@@ -7198,18 +7487,44 @@ function PipelineDetail(props) {
                   h('tr', null,
                     h('th', null, '运行 id'),
                     h('th', null, '状态'),
+                    h('th', null, '触发'),
                     h('th', null, '开始'),
                     h('th', null, '耗时'),
                     h('th', null, ''),
                   )),
                 h('tbody', null,
-                  mine.slice(0, 10).map((run) =>
-                    h('tr', { key: run.id },
+                  history.map((run) =>
+                    // 整行可点：键盘可达（Enter/Space），点行进运行详情（参数与日志由运行页负责）
+                    h('tr', {
+                      key: run.id,
+                      'data-role': 'run-history-row',
+                      'data-run-id': run.id,
+                      role: 'button',
+                      tabIndex: 0,
+                      title: '查看这次运行的参数与日志',
+                      style: { cursor: 'pointer' },
+                      onClick: () => props.onOpenRun(run.id),
+                      onKeyDown: (event) => {
+                        if (event && (event.key === 'Enter' || event.key === ' ')) {
+                          if (event.preventDefault) event.preventDefault();
+                          props.onOpenRun(run.id);
+                        }
+                      },
+                    },
                       h('td', { className: 'dsh-devops-monospace' }, run.id),
                       h('td', null, h(Chip, { tone: runTone(run.status), dot: true }, RUN_STATUS_TEXT[run.status] || run.status)),
-                      h('td', null, fmtAgo(run.startedAt, now)),
-                      h('td', null, run.startedAt ? fmtDuration((run.finishedAt || now) - run.startedAt) : '—'),
-                      h('td', null, h(Button, { size: 'sm', label: '查看运行', onClick: () => props.onOpenRun(run.id) })),
+                      h('td', null, triggerLabel(run.trigger)),
+                      h('td', null, run.startedAt ? fmtAgo(run.startedAt, now) : '—'),
+                      h('td', null, runDurationText(run, now)),
+                      h('td', null, h(Button, {
+                        size: 'sm',
+                        label: '查看运行',
+                        // 行本身也可点：按钮点击不要冒泡触发两次
+                        onClick: (event) => {
+                          if (event && event.stopPropagation) event.stopPropagation();
+                          props.onOpenRun(run.id);
+                        },
+                      })),
                     ),
                   )),
               ),
@@ -7356,33 +7671,50 @@ function Pipelines(props) {
     }
   }
 
-  /** 打开详情；列表里可能还没有完整定义，缺了就从后端取一份并缓存下来。 */
+  /**
+   * 打开详情。
+   *
+   * 根因修复：列表接口（GET /api/pipelines）**不含 stages**，命中 props.state.pipelines
+   * 里的缓存就渲染会让详情页永远显示「这条流水线还没有阶段」。因此这里始终按 id
+   * 现取一份完整定义；列表缓存只用于「取数过程中先铺一层骨架」，不作为最终数据。
+   */
   async function openDetail(id) {
     setDetailId(id);
     setMode('detail');
     writeViewState({ pipelinesMode: 'detail', pipelinesId: id });
-    const cached = (props.state.pipelines || []).find((p) => p.id === id);
-    if (cached) {
-      setDetailData(cached);
-      return;
-    }
-    setDetailData(null);
+    // 先铺缓存里的概览（可能没有 stages），让界面立刻有内容；随后被完整定义替换
+    const cached = (props.state.pipelines || []).find((p) => p.id === id) || null;
+    setDetailData(cached);
     setLoadingDetail(true);
     try {
       const pipeline = await api.getPipeline(id);
       setDetailData(pipeline);
     } catch (error) {
+      // 既有降级：提示并回列表，绝不白屏
       props.toast.error(error.message || String(error));
+      resetPipelineView();
+      setDetailId('');
+      setDetailData(null);
       setMode('list');
     } finally {
       setLoadingDetail(false);
     }
   }
 
-  /** 详情页要展示的数据：优先用列表缓存（刷新后自动同步），否则用单独取到的那一份。 */
-  const detailPipeline =
-    (props.state.pipelines || []).find((p) => p.id === detailId) ||
-    (detailData && detailData.id === detailId ? detailData : null);
+  /**
+   * 详情页要展示的数据：**优先用单独取到的完整定义**（含 stages），
+   * 列表缓存仅作兜底 —— 反过来会让详情页拿到没有 stages 的摘要而显示空白。
+   */
+  const detailPipeline = (() => {
+    const fetched = detailData && detailData.id === detailId ? detailData : null;
+    // 完整定义（带 stages）到手就直接用
+    if (fetched && Array.isArray(fetched.stages)) return fetched;
+    // 列表摘要不含 stages。取数期间若拿它渲染编排视图，会先闪一下
+    // 「这条流水线还没有阶段」再被真实内容替换——显示「加载中…」更诚实。
+    if (loadingDetail) return null;
+    const cached = (props.state.pipelines || []).find((p) => p.id === detailId) || null;
+    return fetched || cached || null;
+  })();
 
   const activeRunsByPipeline = useMemo(() => {
     const map = {};
@@ -7597,6 +7929,14 @@ exports.activeRunOf = activeRunOf;
 exports.blankPipeline = blankPipeline;
 exports.runSummaryByPipeline = runSummaryByPipeline;
 exports.stepStatusMap = stepStatusMap;
+exports.stepInfoMap = stepInfoMap;
+exports.latestRunOf = latestRunOf;
+exports.stageCountOf = stageCountOf;
+exports.jobCountOf = jobCountOf;
+exports.triggerLabel = triggerLabel;
+exports.runDurationText = runDurationText;
+exports.formatElapsed = formatElapsed;
+exports.elapsedOf = elapsedOf;
 exports.toneOfStatus = toneOfStatus;
 exports.readViewState = readViewState;
 exports.writeViewState = writeViewState;
